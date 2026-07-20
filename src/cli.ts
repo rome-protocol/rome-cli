@@ -1,25 +1,26 @@
-import { CAPABILITIES, findCapability } from "./core/capabilities.js";
+import { CAPABILITIES, resolveCli } from "./core/capabilities.js";
 import { defaultDeps } from "./core/deps.js";
 
 const VERSION = "0.1.0";
 
-/** Every `group command` the CLI dispatches — derived from CAPABILITIES (aligns with the MCP tools). */
+/** Every CLI invocation path the CLI dispatches ("facts chain", "deploy", …). */
 export function cliCommandTable(): string[] {
-  return CAPABILITIES.map((c) => `${c.group} ${c.command}`);
+  return CAPABILITIES.map((c) => c.cliPath);
 }
 
 function helpText(): string {
   const lines = [
     "rome — Rome Protocol dev CLI + MCP server",
     "",
-    "Usage: rome <group> <command> [args]",
-    "       rome mcp            start the MCP server (stdio, read-only)",
+    "Usage: rome <command> [args]        (e.g. rome facts chain hadrian · rome deploy …)",
+    "       rome mcp                     start the MCP server (stdio, read-only)",
     "",
     "Commands:",
   ];
   for (const c of CAPABILITIES) {
     const a = c.args.map((x) => (x.required ? `<${x.name}>` : `[${x.name}]`)).join(" ");
-    lines.push(`  rome ${c.group} ${c.command}${a ? " " + a : ""}\n      ${c.summary}`);
+    const tag = c.kind === "action" ? "  [needs ROME_EVM_KEY]" : "";
+    lines.push(`  rome ${c.cliPath}${a ? " " + a : ""}${tag}\n      ${c.summary}`);
   }
   return lines.join("\n");
 }
@@ -44,13 +45,13 @@ export async function main(argv: string[]): Promise<number | void> {
     return;
   }
 
-  const [group, command, ...rest] = args;
-  const cap = findCapability(group, command);
-  if (!cap) {
-    console.error(`Unknown command: rome ${[group, command].filter(Boolean).join(" ")}`);
+  const resolved = resolveCli(args);
+  if (!resolved) {
+    console.error(`Unknown command: rome ${args.slice(0, 2).join(" ")}`);
     console.error("\n" + helpText());
     return 1;
   }
+  const { cap, rest } = resolved;
 
   const argObj: Record<string, string> = {};
   cap.args.forEach((spec, i) => {

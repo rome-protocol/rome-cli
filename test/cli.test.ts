@@ -32,6 +32,17 @@ describe("CLI dispatch (main)", () => {
     expect(c.out.join("\n")).toMatch(/rome-dex/);
   });
 
+  it("dispatches a single verb command (rome send, no key → exit 1 with a clear error)", async () => {
+    const prev = process.env.ROME_EVM_KEY;
+    delete process.env.ROME_EVM_KEY;
+    const c = capture();
+    const code = await main(["node", "rome", "send", "hadrian", "0x0000000000000000000000000000000000000001", "deposit(uint256)", "1"]);
+    c.restore();
+    if (prev !== undefined) process.env.ROME_EVM_KEY = prev;
+    expect(code).toBe(1);
+    expect(c.err.join("\n")).toMatch(/ROME_EVM_KEY/);
+  });
+
   it("errors (exit 1) on a missing required arg", async () => {
     const c = capture();
     const code = await main(["node", "rome", "facts", "chain"]);

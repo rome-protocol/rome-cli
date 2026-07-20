@@ -10,9 +10,12 @@ export interface McpToolDef {
   capability: Capability;
 }
 
-/** The MCP tool list, derived from the same CAPABILITIES the CLI uses. */
+/**
+ * The MCP tool list — ONLY read-only capabilities. Actions (deploy/send/…) need a signing
+ * key and are CLI-only; they are never exposed as MCP tools, so a key can never reach MCP.
+ */
 export function buildMcpTools(): McpToolDef[] {
-  return CAPABILITIES.map((c) => ({ name: c.mcpTool, description: c.summary, capability: c }));
+  return CAPABILITIES.filter((c) => c.kind === "read").map((c) => ({ name: c.mcpTool, description: c.summary, capability: c }));
 }
 
 function inputShape(cap: Capability): ZodRawShape {
