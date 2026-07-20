@@ -9,7 +9,7 @@ Both surfaces expose the **same** capabilities with the same names — an agent 
 
 Two things stall an agent building on Rome: **hallucinated facts** (wrong ids, addresses, selectors) and **not knowing the pattern** (how to CPI, which example to copy). `rome` answers both, read-only, from the live registry and the SDK.
 
-**Full reference:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how it's built, every capability, the security model, and how the CLI vs the MCP server run.
+**Docs:** [`docs/GUIDES.md`](docs/GUIDES.md) — real usage + how to fold it into an agent, a shell script, or CI · [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how it's built, every capability, the security model, and CLI-vs-MCP.
 
 ## Install
 
@@ -34,7 +34,24 @@ rome cookbook cpi-recipe           # the CPI account-rules + SDK encoders (groun
 rome cookbook patterns lending     # which example repo + guide fits a goal
 ```
 
-Chains resolve by id, name, or slug (`200010`, `hadrian`, `200010-hadrian`). Output is JSON — pipe it to `jq` or read it in an agent.
+Chains resolve by id, name, or slug (`200010`, `hadrian`, `200010-hadrian`). Output is JSON — pipe it to `jq` or read it in an agent:
+
+```console
+$ rome facts chain hadrian
+{
+  "chainId": 200010,
+  "name": "Rome Hadrian",
+  "rpcUrl": "https://hadrian.testnet.romeprotocol.xyz/",
+  "romeEvmProgramId": "RPTWwELXAY4KC9ZPHhaxp7Sq1hHtU3HNEgLbSegCcWf",
+  "nativeCurrency": { "symbol": "USDC", "decimals": 18 }, …
+}
+
+# pair the gas token with its wrapper by shared mint, in one line:
+$ rome facts tokens hadrian | jq -r '.tokens[] | select(.symbol=="wUSDC") | .address'
+0xd4cc34b67c805d472b5a709a22a1037f6b16ef28
+```
+
+More recipes — agent (MCP), shell, and CI integration — in [`docs/GUIDES.md`](docs/GUIDES.md).
 
 ## MCP server
 
