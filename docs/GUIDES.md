@@ -103,7 +103,7 @@ Give your coding agent grounded Rome facts so it stops guessing addresses and se
 
 **1. Install** (repo-first; npm publish pending):
 ```bash
-npm install -g github:rome-protocol/rome-cli
+npm install -g github:rome-protocol/rome-cli#v0.2.0
 ```
 
 **2. Register the MCP server** in your client's config. You don't run or host anything — the client launches `rome mcp` on demand.
