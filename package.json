@@ -1,0 +1,35 @@
+{
+  "name": "@rome-protocol/cli",
+  "version": "0.1.0",
+  "description": "rome — the Rome Protocol dev CLI and MCP server: grounded chain facts and build patterns for humans and AI agents.",
+  "type": "module",
+  "bin": {
+    "rome": "dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "AGENTS.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@rome-protocol/registry": "github:rome-protocol/rome-registry#v0.1.0",
+    "@rome-protocol/sdk": "github:rome-protocol/rome-sdk-ts#v0.2.1",
+    "viem": "^2.21.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
