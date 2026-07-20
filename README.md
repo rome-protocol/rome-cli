@@ -16,9 +16,9 @@ Two things stall an agent building on Rome: **hallucinated facts** (wrong ids, a
 Repo-first (npm publish pending):
 
 ```bash
-npm install -g github:rome-protocol/rome-cli
+npm install -g github:rome-protocol/rome-cli#v0.2.0
 # or run without installing:
-npx github:rome-protocol/rome-cli facts chain hadrian
+npx github:rome-protocol/rome-cli#v0.2.0 facts chain hadrian
 ```
 
 ## CLI
