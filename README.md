@@ -9,6 +9,8 @@ Both surfaces expose the **same** capabilities with the same names — an agent 
 
 Two things stall an agent building on Rome: **hallucinated facts** (wrong ids, addresses, selectors) and **not knowing the pattern** (how to CPI, which example to copy). `rome` answers both, read-only, from the live registry and the SDK.
 
+**Full reference:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how it's built, every capability, the security model, and how the CLI vs the MCP server run.
+
 ## Install
 
 Repo-first (npm publish pending):
@@ -36,7 +38,7 @@ Chains resolve by id, name, or slug (`200010`, `hadrian`, `200010-hadrian`). Out
 
 ## MCP server
 
-Add to your MCP client (e.g. Claude Code / Claude Desktop) config:
+**You don't run or host anything.** `rome mcp` is a **stdio** server (not a network daemon) that your MCP client launches for you. Register it once:
 
 ```json
 {
@@ -46,7 +48,7 @@ Add to your MCP client (e.g. Claude Code / Claude Desktop) config:
 }
 ```
 
-The server exposes each capability as a tool (`facts_chain`, `facts_gas`, `cookbook_cpi_recipe`, …). It is **read-only and holds no keys** — safe to wire into any agent; it can never sign a transaction or leak a secret. Your app always does the signing, via [`@rome-protocol/sdk`](https://github.com/rome-protocol/rome-sdk-ts).
+The client (Claude Code / Claude Desktop / Cursor / …) spawns `rome mcp` as a child process on demand, talks to it over stdin/stdout, and shuts it down when the session ends — no port, no hosting, no process manager. It exposes each capability as a tool (`facts_chain`, `facts_gas`, `cookbook_cpi_recipe`, …), is **read-only and holds no keys** — safe to wire into any agent; it can never sign a transaction or leak a secret. Your app always does the signing, via [`@rome-protocol/sdk`](https://github.com/rome-protocol/rome-sdk-ts). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#running-it--cli-vs-mcp-server) for the lifecycle.
 
 ## What it is — and isn't (v1)
 
