@@ -6,6 +6,7 @@ Concrete, copy-paste recipes: real commands with real output, and how to fold `r
 - [Integrate into an AI agent (MCP)](#integrate-into-an-ai-agent-mcp)
 - [The agent grounding loop](#the-agent-grounding-loop)
 - [Fund a wallet from another chain (`fund` / `bridge`)](#fund-a-wallet-from-another-chain-fund--bridge)
+- [Prove it works — `rome verify`](#prove-it-works--rome-verify)
 - [Shell & scripting recipes](#shell--scripting-recipes)
 - [Use it in CI](#use-it-in-ci)
 - [End-to-end: build a price-reading contract, grounded by rome](#end-to-end-build-a-price-reading-contract-grounded-by-rome)
@@ -96,6 +97,53 @@ $ rome cookbook patterns lending
 ```
 No goal → the full index (AMM → rome-dex, CPI → cardo, from-home → appia, oracle → rome-oracle-gateway, scaffold → create-rome-app).
 
+### `rome cookbook errors [query]`
+```console
+$ rome cookbook errors gas
+[ { "symptom": "eth_estimateGas returns a huge value (often 10-50× the real charge)…",
+    "cause": "Rome charges the EXACT gas used; the estimate is a loose upper bound.",
+    "fix": "Don't hard-fail or size budgets off the estimate. A native transfer is ~1.48M gas, not 21k." } ]
+```
+No query → the full taxonomy (`Custom(0)`/AccountLocked, `CpiProhibitedInIterativeTx`, `UnknownInstruction(N)`, `forge --skip-simulation`, Solana-lane `Custom(1)`, …).
+
+### `rome doctor <chain> [--address 0x…]`
+```console
+$ rome doctor hadrian --address 0x1Fc3…
+{
+  "chain": { "id": 200010, "name": "Rome Hadrian", "network": "devnet", "status": "live" },
+  "checks": [
+    { "name": "chain-live",         "ok": true, "detail": "status=live" },
+    { "name": "program-configured", "ok": true, "detail": "RPTWwELX…" },
+    { "name": "rpc-reachable",      "ok": true, "detail": "https://hadrian…/ (gasPrice …)" },
+    { "name": "wallet-funded",      "ok": true, "detail": "… wei (USDC)" }
+  ],
+  "ok": true
+}
+```
+
+### `rome tx <chain> <hash>`
+```console
+$ rome tx hadrian 0x8d99…
+{
+  "status": "success",
+  "receipt": { "gasUsed": "0x1607b0", "from": "0x…", "to": "0x…", "blockNumber": "0x…" },
+  "solanaSettlement": ["5Lwke7W1…"],
+  "explorer": "https://via-hadrian.testnet.romeprotocol.xyz/tx/0x8d99…",
+  "note": "Confirmed. solanaSettlement lists the Solana tx(s) that settled this EVM tx."
+}
+```
+Rome has no `debug_trace*`; `tx` maps the EVM hash to its Solana settlement via `rome_solanaTxForEvmTx`.
+
+### `rome preset <foundry|hardhat> <chain>`
+```console
+$ rome preset foundry hadrian
+{
+  "tool": "foundry", "chainId": 200010, "filename": "foundry.toml",
+  "config": "[rpc_endpoints]\nrome-hadrian = \"https://hadrian.testnet.romeprotocol.xyz/\"",
+  "notes": ["forge script --skip-simulation …", "Rome charges exact gas; estimateGas over-predicts …", "…"]
+}
+```
+
 ---
 
 ## Integrate into an AI agent (MCP)
@@ -117,9 +165,10 @@ npm install -g github:rome-protocol/rome-cli#v0.4.0
 
 **3. Verify** the tools are live:
 ```bash
-rome mcp   # starts the stdio server; your client lists: facts_chain, facts_tokens,
-           # facts_contracts, facts_gas, facts_balance, facts_programs,
-           # cookbook_cpi_recipe, cookbook_patterns   (Ctrl-C to stop the manual check)
+rome mcp   # starts the stdio server; your client lists the READ tools: facts_chain,
+           # facts_tokens, facts_contracts, facts_gas, facts_balance, facts_programs,
+           # cookbook_cpi_recipe, cookbook_patterns, cookbook_errors, call, doctor, tx, preset
+           # (actions — deploy/send/fund/bridge/verify — are CLI-only, never on MCP)
 ```
 
 **4. Use it in a prompt.** Now the agent can call the tools instead of hallucinating:
@@ -186,6 +235,29 @@ rome bridge hadrian --from base-sepolia --amount 0.5 --intent wrapper   # → wU
 Supported source chains come from the registry's bridge config for the target Rome chain — Base Sepolia, Arbitrum Sepolia, Polygon Amoy, Avalanche Fuji, Monad Testnet, Sepolia. Resolve a source by id, name, or slug (`84532`, `"base sepolia"`, `base-sepolia`). CCTP standard attestation takes ~15–20 min, so a real transfer isn't instant; the command polls until it lands.
 
 > The bridge-api base defaults to the devnet orchestrator; override with `--bridge-api <url>` or `ROME_BRIDGE_API`.
+
+---
+
+## Prove it works — `rome verify`
+
+The keystone: prove a contract actually works on Rome, driven from **both lanes**. `verify --path solidity` deploys a probe, sets a value from the EVM lane (`submitRomeTx`) *and* the Solana lane (`submitRomeTxSolanaLane`), and asserts the same contract answered on each — the litmus test, runnable.
+
+A funded **action**: needs `ROME_EVM_KEY` + `ROME_SOLANA_KEY` (env-only), CLI-only, never on MCP.
+
+```console
+$ rome verify hadrian --path solidity
+{
+  "path": "solidity",
+  "probe": "0x368744e9…",
+  "checks": [
+    { "lane": "evm",    "wrote": "42", "read": "42", "ok": true },
+    { "lane": "solana", "wrote": "43", "read": "43", "ok": true }
+  ],
+  "ok": true
+}
+```
+
+`ok: true` means one contract on Rome answered correctly whether an EVM wallet *or* a Solana wallet drove it — the dual-lane promise, verified on-chain. (`--path solana-program` and `--path from-home` follow.)
 
 ---
 
