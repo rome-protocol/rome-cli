@@ -33,6 +33,7 @@ rome facts programs devnet         # Solana program ids for a network
 rome cookbook cpi-recipe           # the CPI account-rules + SDK encoders (grounded addresses)
 rome cookbook patterns lending     # which example repo + guide fits a goal
 rome cookbook errors "Custom(1)"   # decode a Rome failure → cause + fix (the error taxonomy)
+rome preset foundry hadrian        # ready Rome network config for foundry / hardhat + the quirks
 rome call hadrian 0x… "balanceOf(address) returns (uint256)" 0x…   # read a contract (no key)
 rome doctor hadrian --address 0x…  # preflight: chain live? RPC reachable? program set? wallet funded?
 rome tx hadrian 0x…                # diagnose a tx: EVM receipt + the Solana settlement tx(s) + a Via link
