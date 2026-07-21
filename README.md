@@ -32,6 +32,13 @@ rome facts balance hadrian 0x…     # native (gas-token) balance for an address
 rome facts programs devnet         # Solana program ids for a network
 rome cookbook cpi-recipe           # the CPI account-rules + SDK encoders (grounded addresses)
 rome cookbook patterns lending     # which example repo + guide fits a goal
+rome call hadrian 0x… "balanceOf(address) returns (uint256)" 0x…   # read a contract (no key)
+
+# actions — sign on-chain, need ROME_EVM_KEY (never a flag/log/MCP):
+rome deploy hadrian ./out/Store.json                # deploy a compiled artifact
+rome send   hadrian 0x… "set(uint256)" 42           # write via submitRomeTx
+rome fund   hadrian --from base-sepolia --amount 1  # bridge USDC → Rome gas (CCTP, "from home")
+rome bridge hadrian --from base-sepolia --amount 1 --intent wrapper   # USDC → wUSDC on Rome
 ```
 
 Chains resolve by id, name, or slug (`200010`, `hadrian`, `200010-hadrian`). Output is JSON — pipe it to `jq` or read it in an agent:
@@ -67,11 +74,12 @@ More recipes — agent (MCP), shell, and CI integration — in [`docs/GUIDES.md`
 
 The client (Claude Code / Claude Desktop / Cursor / …) spawns `rome mcp` as a child process on demand, talks to it over stdin/stdout, and shuts it down when the session ends — no port, no hosting, no process manager. It exposes each capability as a tool (`facts_chain`, `facts_gas`, `cookbook_cpi_recipe`, …), is **read-only and holds no keys** — safe to wire into any agent; it can never sign a transaction or leak a secret. Your app always does the signing, via [`@rome-protocol/sdk`](https://github.com/rome-protocol/rome-sdk-ts). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#running-it--cli-vs-mcp-server) for the lifecycle.
 
-## What it is — and isn't (v1)
+## What it is — two layers
 
-- **v1 is grounding**: facts + cookbook, read-only. It kills hallucination and points at the right pattern.
-- It does **not** deploy or sign. Deploy with Foundry / Hardhat or [`create-rome-app`](https://github.com/rome-protocol/create-rome-app); write from your app via the SDK.
-- Facts come from [`@rome-protocol/registry`](https://github.com/rome-protocol/rome-registry) and the chain's RPC; the CPI recipe's precompile addresses come from the SDK — nothing is hardcoded here.
+- **Grounding — read-only, on both CLI + MCP**: `facts` + `cookbook` + `call`. Kills hallucination, routes you to the right pattern, reads contracts. Holds no keys — safe to wire into any agent.
+- **Actions — CLI-only, key-gated, never on MCP**: `deploy` / `send` (contracts) and `fund` / `bridge` (the "from home" on-ramp: bridge USDC in as gas or wUSDC via CCTP). These sign, so they read the key from the environment (`ROME_EVM_KEY`) — never a flag, never logged, never through the MCP server. Every action prints what it did; funding previews with `--dry-run`.
+- Everything is sourced from [`@rome-protocol/registry`](https://github.com/rome-protocol/rome-registry) + the chain's RPC + the SDK's `@rome-protocol/sdk/bridge` — nothing chain-specific is hardcoded.
+- Still orchestrates, doesn't replace: heavy contract builds stay in Foundry / Hardhat; scaffolding is [`create-rome-app`](https://github.com/rome-protocol/create-rome-app); library writes use [`@rome-protocol/sdk`](https://github.com/rome-protocol/rome-sdk-ts).
 
 ## Development
 

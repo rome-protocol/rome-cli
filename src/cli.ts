@@ -8,6 +8,32 @@ export function cliCommandTable(): string[] {
   return CAPABILITIES.map((c) => c.cliPath);
 }
 
+/**
+ * Split a command's trailing argv into ordered positionals and `--flag` values.
+ * `--name value` → { name: value }; a bare `--name` (end, or followed by another
+ * `--flag`) → { name: "true" } (boolean). Positionals keep their order.
+ */
+export function parseRest(rest: string[]): { positionals: string[]; flags: Record<string, string> } {
+  const positionals: string[] = [];
+  const flags: Record<string, string> = {};
+  for (let i = 0; i < rest.length; i++) {
+    const t = rest[i];
+    if (t.startsWith("--")) {
+      const name = t.slice(2);
+      const next = rest[i + 1];
+      if (next !== undefined && !next.startsWith("--")) {
+        flags[name] = next;
+        i++;
+      } else {
+        flags[name] = "true";
+      }
+    } else {
+      positionals.push(t);
+    }
+  }
+  return { positionals, flags };
+}
+
 function helpText(): string {
   const lines = [
     "rome — Rome Protocol dev CLI + MCP server",
@@ -53,10 +79,18 @@ export async function main(argv: string[]): Promise<number | void> {
   }
   const { cap, rest } = resolved;
 
+  // Each declared arg can be given positionally OR as `--name value`; bare `--name`
+  // is a boolean flag ("true"). Positionals fill declared args left-to-right; any
+  // extra `--flag` is carried through so handlers can read it.
+  const { positionals, flags } = parseRest(rest);
   const argObj: Record<string, string> = {};
-  cap.args.forEach((spec, i) => {
-    if (rest[i] != null) argObj[spec.name] = rest[i];
-  });
+  let pi = 0;
+  for (const spec of cap.args) {
+    if (flags[spec.name] !== undefined) argObj[spec.name] = flags[spec.name];
+    else if (positionals[pi] !== undefined) argObj[spec.name] = positionals[pi++];
+  }
+  for (const [k, v] of Object.entries(flags)) if (!(k in argObj)) argObj[k] = v;
+
   const missing = cap.args.filter((s) => s.required && argObj[s.name] == null);
   if (missing.length) {
     console.error(`Missing required: ${missing.map((m) => m.name).join(", ")}`);

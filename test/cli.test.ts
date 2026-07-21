@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { main } from "../src/cli.js";
+import { main, parseRest } from "../src/cli.js";
 
 // Drive the REAL CLI dispatch (findCapability + positional-arg mapping + exit codes),
 // not just the capability table — this is the behavioral half of the alignment gate.
@@ -65,5 +65,40 @@ describe("CLI dispatch (main)", () => {
     c.restore();
     expect(code).toBe(0);
     expect(c.out.join("\n")).toMatch(/rome mcp/);
+  });
+
+  it("maps --flag value + boolean --flag through to the handler (fund, no key → exit 1 on the KEY, proving from/amount parsed)", async () => {
+    const prev = process.env.ROME_EVM_KEY;
+    delete process.env.ROME_EVM_KEY;
+    const c = capture();
+    const code = await main(["node", "rome", "fund", "hadrian", "--from", "base sepolia", "--amount", "0.01"]);
+    c.restore();
+    if (prev !== undefined) process.env.ROME_EVM_KEY = prev;
+    expect(code).toBe(1);
+    // if the flags hadn't parsed we'd fail earlier on "missing required from/amount"
+    expect(c.err.join("\n")).toMatch(/ROME_EVM_KEY/);
+    expect(c.err.join("\n")).not.toMatch(/missing required/i);
+  });
+});
+
+describe("parseRest (positionals + --flags)", () => {
+  it("keeps positionals ordered and captures --name value", () => {
+    expect(parseRest(["hadrian", "--from", "base-sepolia", "--amount", "0.01"])).toEqual({
+      positionals: ["hadrian"],
+      flags: { from: "base-sepolia", amount: "0.01" },
+    });
+  });
+  it("treats a bare --flag (at end or before another flag) as boolean true", () => {
+    expect(parseRest(["--dry-run"])).toEqual({ positionals: [], flags: { "dry-run": "true" } });
+    expect(parseRest(["--dry-run", "--amount", "1"])).toEqual({
+      positionals: [],
+      flags: { "dry-run": "true", amount: "1" },
+    });
+  });
+  it("preserves pure-positional invocations unchanged", () => {
+    expect(parseRest(["hadrian", "0xabc", "deposit(uint256)", "1"])).toEqual({
+      positionals: ["hadrian", "0xabc", "deposit(uint256)", "1"],
+      flags: {},
+    });
   });
 });
