@@ -1,21 +1,24 @@
 # rome-cli — architecture & reference
 
-`rome` gives a builder — human or AI agent — **grounded Rome facts** and the **right build pattern**, through two aligned surfaces over one capability core. This document explains how it's put together, how to run it, every capability, and the security model.
+`rome` carries a builder — human or AI agent — across the whole build-on-Rome lifecycle through **two aligned surfaces over one capability core**: grounded facts, the right pattern, contract calls, the Rome-unique on-ramp (`fund`/`bridge`), deploy/send, cross-VM diagnosis, and the both-lane works-gate (`verify`). This document explains how it's put together, how to run it, every capability, and the security model.
 
-## The shape: one core, two surfaces
+## The shape: one core, two surfaces, two kinds
 
 ```
-              ┌──────────── capability core (read-only) ─────────────┐
-              │  facts:   chain · tokens · contracts · gas · balance  │
-              │           · programs         (registry + RPC)         │
-              │  cookbook: cpi-recipe · patterns   (SDK + curated)    │
-              └───────────────┬────────────────────┬─────────────────┘
-                 rome <group> <cmd>            rome mcp
-                 (CLI — humans + agent           (stdio MCP server —
-                  shell-outs; one-shot)           MCP-native agents)
+        ┌───────────────── capability core (src/core/capabilities.ts) ─────────────────┐
+        │  READS (no keys):   facts · cookbook · call · doctor · tx · preset            │
+        │  ACTIONS (key-gated): deploy · send · fund · bridge · verify                  │
+        └───────────────────────────┬───────────────────────────┬─────────────────────┘
+                       rome <cmd>  (CLI — all commands)      rome mcp  (stdio MCP server)
+                       humans + agent shell-outs             MCP-native agents — READS ONLY
 ```
 
-Both surfaces are generated from a **single `CAPABILITIES` registry** (`src/core/capabilities.ts`). A capability's CLI command (`facts chain`) and its MCP tool (`facts_chain`) are the *same* handler with the *same* name-stem — so the two surfaces cannot drift. That invariant is asserted by a test (`test/alignment.test.ts`) and a behavioral test that drives the real CLI dispatch (`test/cli.test.ts`).
+Both surfaces are generated from a **single `CAPABILITIES` registry**. Each capability declares a **kind**:
+
+- **`read`** — a pure lookup or diagnosis; **holds no key**; exposed on **both** the CLI and the MCP server.
+- **`action`** — writes/signs on-chain; **CLI-only and key-gated** (the signing key comes from the environment); **never** registered as an MCP tool.
+
+A capability's CLI command (`facts chain`) and its MCP tool (`facts_chain`) are the *same* handler with the *same* name-stem, so the surfaces cannot drift. The invariant — **MCP tools === the read capabilities, actions absent** — is asserted by `test/alignment.test.ts`, plus a behavioral test that drives the real CLI dispatch (`test/cli.test.ts`) and an end-to-end MCP client smoke (`scripts/mcp-smoke.mjs`).
 
 ## Running it — CLI vs MCP server
 
@@ -23,67 +26,69 @@ Both surfaces are generated from a **single `CAPABILITIES` registry** (`src/core
 
 ### CLI — standalone, one-shot
 ```bash
-rome facts chain hadrian      # prints JSON, process exits
-rome cookbook patterns lending
+rome facts chain hadrian          # prints JSON, process exits
+rome fund hadrian --from base-sepolia --amount 1   # an action (needs a key; see Security)
 ```
-Each invocation is its own short-lived process. Nothing stays running. Pipe the JSON to `jq`, or let an agent shell out to `rome …` and read stdout.
+Each invocation is its own short-lived process. Pipe the JSON to `jq`, or let an agent shell out to `rome …` and read stdout. Commands take positionals or `--flags` interchangeably.
 
 ### MCP — a stdio server your client launches for you
-`rome mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io) server over **stdio** (stdin/stdout) — **not** a network daemon. You do **not** run it yourself or host it anywhere. You register it once in an MCP client:
+`rome mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io) server over **stdio** — **not** a network daemon. You do not run or host it. Register it once:
 
 ```json
-{
-  "mcpServers": {
-    "rome": { "command": "rome", "args": ["mcp"] }
-  }
-}
+{ "mcpServers": { "rome": { "command": "rome", "args": ["mcp"] } } }
 ```
 
-The client (Claude Code, Claude Desktop, Cursor, …) spawns `rome mcp` as a **child process on demand**, speaks JSON-RPC to it over stdin/stdout, and terminates it when the session ends. The process stays alive only while the client holds its stdin open. No port, no hosting, no process manager. The MCP server exposes each capability as a tool (`facts_chain`, `facts_gas`, `cookbook_cpi_recipe`, …).
+The client (Claude Code, Claude Desktop, Cursor, …) spawns `rome mcp` as a **child process on demand**, speaks JSON-RPC over stdin/stdout, and terminates it when the session ends. No port, no hosting. It exposes **only the read capabilities** as tools — an agent gets grounded facts, patterns, diagnosis, and toolchain config, but can never sign or move funds through MCP.
 
-**When to use which:** a person or a shell script → the CLI. An MCP-native agent → configure `rome mcp` and call the tools. Same capabilities, same data, either way.
+**When to use which:** a person or shell script → the CLI. An MCP-native agent → configure `rome mcp` for reads, and shell out to `rome <action>` (with a key in its environment) when it needs to fund/deploy/verify.
 
 ## Capabilities
 
-All read-only. Facts resolve against the public `@rome-protocol/registry` (Hadrian + Martius) and the chain's RPC; the cookbook is grounded on the SDK's real values + a curated index.
-
-### `facts` — grounded chain facts (kills hallucination)
+### Reads — CLI + MCP, no keys
 
 | CLI | MCP tool | What it returns | Source |
 |---|---|---|---|
-| `rome facts chain <id>` | `facts_chain` | chain id, RPC, explorer, rome-evm program id, gas token | registry `getChain` |
-| `rome facts tokens <id>` | `facts_tokens` | token list (address, mint, symbol, decimals, kind) + match-by-mint note | registry `getTokens` |
-| `rome facts contracts <id>` | `facts_contracts` | deployed contract addresses | registry `getContracts` |
-| `rome facts gas <id>` | `facts_gas` | live gas price + the estimate-over-predicts / exact-charge / ~1.48M-native-transfer caveats | RPC `eth_gasPrice` |
-| `rome facts balance <id> <addr>` | `facts_balance` | native (gas-token) balance for an address | RPC `eth_getBalance` |
-| `rome facts programs <network>` | `facts_programs` | Solana program ids for `devnet`/`testnet`/`mainnet` | registry `getPrograms` |
+| `facts chain <id>` | `facts_chain` | chain id, RPC, explorer, rome-evm program id, gas token | registry `getChain` |
+| `facts tokens <id>` | `facts_tokens` | token list (address, mint, symbol, decimals, kind) | registry `getTokens` |
+| `facts contracts <id>` | `facts_contracts` | deployed contract addresses | registry `getContracts` |
+| `facts gas <id>` | `facts_gas` | live gas price + the estimate-vs-charge / ~1.48M-native caveats | RPC |
+| `facts balance <id> <addr>` | `facts_balance` | native (gas-token) balance | RPC |
+| `facts programs <network>` | `facts_programs` | Solana program ids for a network | registry `getPrograms` |
+| `cookbook cpi-recipe [prog]` | `cookbook_cpi_recipe` | the CPI account-rules + SDK encoders + real precompile addresses | `@rome-protocol/sdk` |
+| `cookbook patterns [goal]` | `cookbook_patterns` | which example repo + guide fits a goal | curated index |
+| `cookbook errors [query]` | `cookbook_errors` | decode a Rome failure → cause + fix (the error taxonomy) | curated |
+| `call <chain> <addr> <sig> [args]` | `call` | read a contract via `eth_call` | RPC |
+| `doctor <chain> [--address]` | `doctor` | preflight: chain live? RPC reachable? program set? wallet funded? | registry + RPC |
+| `tx <chain> <hash>` | `tx` | EVM receipt + the Solana settlement tx(s) (`rome_solanaTxForEvmTx`) + Via link | RPC |
+| `preset <foundry\|hardhat> <chain>` | `preset` | ready Rome toolchain config (RPC + chainId) + quirks | registry |
 
-Chains resolve by id, name, or slug (`200010`, `hadrian`, `200010-hadrian`, `Rome Hadrian`) — by **exact** match, so an ambiguous prefix or a bad id fails loudly rather than returning the wrong chain.
+Chains resolve by id, name, or slug (`200010`, `hadrian`, `Rome Hadrian`) — by **exact** match, so an ambiguous prefix or bad id fails loudly rather than returning the wrong chain.
 
-### `cookbook` — the right pattern (kills "don't know how")
+### Actions — CLI-only, key-gated, never MCP
 
-| CLI | MCP tool | What it returns | Source |
-|---|---|---|---|
-| `rome cookbook cpi-recipe [program]` | `cookbook_cpi_recipe` | the CPI account-rules agents get wrong (accounts non-empty; operator + program_id excluded; sign as `HELPER.pda(address(this))`, not `tx.origin`) + the SDK encoders + real precompile addresses | `@rome-protocol/sdk` `PRECOMPILE_ADDRESSES` |
-| `rome cookbook patterns [goal]` | `cookbook_patterns` | which example repo + guide fits a goal (lending → aerarium; AMM → rome-dex; CPI → cardo; from-home → appia; oracle → oracle-gateway; scaffold → create-rome-app) | curated index |
+| CLI | Signs with | What it does |
+|---|---|---|
+| `deploy <chain> <artifact> [args]` | `ROME_EVM_KEY` | deploy a compiled artifact, handling Rome's gas quirks |
+| `send <chain> <addr> <sig> [args]` | `ROME_EVM_KEY` | write to a contract via `submitRomeTx` (the correct Rome write path) |
+| `fund <chain> --from <src> --amount <usdc>` | `ROME_EVM_KEY` | bridge USDC → Rome **gas** (CCTP); the "from home" on-ramp |
+| `bridge <chain> --from <src> --amount <usdc> [--intent gas\|wrapper]` | `ROME_EVM_KEY` | bridge USDC in as gas or wUSDC |
+| `verify <chain> [--path solidity]` | `ROME_EVM_KEY` + `ROME_SOLANA_KEY` | the **both-lane works-gate**: deploy a probe, drive it from the EVM lane *and* the Solana lane, assert parity |
+
+`fund`/`bridge` orchestrate `@rome-protocol/sdk/bridge` (quote → sign the source burn → settle → register → poll); `verify` orchestrates `submitRomeTx` (EVM lane) + `submitRomeTxSolanaLane` (Solana lane). Every action prints what it did; `fund`/`bridge` preview with `--dry-run`.
 
 ## Grounding — why the facts are trustworthy
 
-Every value comes from a real source, never a model's memory:
-- **Chain facts** — `@rome-protocol/registry` (the generated, public projection) + the chain's own RPC.
-- **Precompile addresses** in the CPI recipe — imported from `@rome-protocol/sdk`'s `PRECOMPILE_ADDRESSES` constant, not hardcoded here.
-- **The pattern index** — a small curated map that mirrors the [ecosystem map](https://docs.rome.builders/getting-started/ecosystem).
+Every value comes from a real source, never a model's memory: chain facts from `@rome-protocol/registry` + the chain's RPC; precompile addresses from `@rome-protocol/sdk`; the pattern index mirrors the [ecosystem map](https://docs.rome.builders/getting-started/ecosystem). If the registry doesn't publish a chain, `rome` says so (with the known set) instead of guessing.
 
-If the registry doesn't publish a chain, `rome facts` says so (with the known set) instead of guessing.
+## Security model — the read/action boundary
 
-## Security model
+The read/action split runs along the **surface boundary**, and that is the whole security design:
 
-**Read-only by charter — the tool holds no keys and cannot sign.**
-- No capability writes, signs, or sends a transaction. Every one is a read.
-- The code imports `viem` only as `createPublicClient` (reads: `getGasPrice`/`getBalance`) and `@rome-protocol/sdk` only for the `PRECOMPILE_ADDRESSES` **constant** — no signer, no wallet client, no encoder is ever invoked to submit.
-- **Zero `process.env` reads** — the tool cannot pick up a private key.
+- **Reads hold no key** and are safe to wire into any agent over MCP — they can never sign, fund, or leak a secret.
+- **Actions are CLI-only and key-gated.** The signing key is read from the **environment only** (`ROME_EVM_KEY`, and `ROME_SOLANA_KEY` for `verify`'s Solana lane) — **never** a flag, never logged, never sent through the MCP server. A missing key fails fast with a clear error before any network call.
+- **The MCP server registers only `read` capabilities** (asserted by test) — so a key can never reach the MCP surface, and an agent given `rome mcp` cannot move funds no matter what it's asked.
 
-This is *why* the read/act split runs along the surface boundary: the **MCP server is safe to wire into any agent** — it can never leak a secret or move funds. When write actions land (see below), they are **CLI-only**, with the key supplied via the local environment, never through MCP.
+Funded testing uses agent-generated wallets funded by the operator; keys live in a git-excluded location, never in the repo.
 
 ## Project layout
 
@@ -91,19 +96,23 @@ This is *why* the read/act split runs along the surface boundary: the **MCP serv
 src/
   core/
     capabilities.ts   the single CAPABILITIES registry (both surfaces read this)
-    facts.ts          chain/token/contract/gas/balance/programs handlers + resolveChainId
-    cookbook.ts       cpi-recipe + patterns handlers + the curated index
-    deps.ts           injectable RPC client (viem public client; stubbed in tests)
-  cli.ts              `rome <group> <cmd>` dispatch (exported main; no side effects on import)
-  mcp.ts              `rome mcp` — registers each capability as an MCP tool over stdio
-  bin.ts              the `rome` binary entry (only file that runs on invocation)
-test/                 facts + cookbook + alignment + behavioral CLI tests (+ scripts/mcp-smoke.mjs e2e)
+    facts.ts          chain/token/contract/gas/balance/programs + resolveChainId
+    cookbook.ts       cpi-recipe + patterns + errors (the taxonomy) + curated index
+    actions.ts        call (read) · deploy · send (viem + submitRomeTx)
+    bridge.ts         fund · bridge — the inbound CCTP flow engine (orchestrates the SDK)
+    doctor.ts         preflight checklist
+    tx.ts             cross-VM diagnosis (rome_solanaTxForEvmTx; no debug_trace)
+    verify.ts         the both-lane works-gate (+ probe.ts, the bundled Store probe)
+    presets.ts        foundry/hardhat config
+    keys.ts           requireEvmKey / requireSolanaKey (env-only)
+    eip1193.ts        Node EIP-1193 shim for submitRomeTx
+    deps.ts           injectable RPC client (stubbed in tests)
+  cli.ts              `rome <cmd>` dispatch + the --flag parser (exported main)
+  mcp.ts              `rome mcp` — registers each READ capability as an MCP tool
+  bin.ts              the `rome` binary entry
+test/                 per-module unit tests + alignment + behavioral CLI (+ mcp-smoke.mjs e2e)
 ```
 
-## Extending — v1.1 (planned)
+## Roadmap
 
-v1 is **grounding-first** (read-only). The next tier adds Rome-*unique* actions to the **CLI only**:
-- `rome fund` — bridge USDC into a Rome chain (the funding on-ramp; no faucet).
-- `rome verify` — the funded both-lane works-gate (fund → deploy → act → assert).
-
-Deploy stays with Foundry / Hardhat / `create-rome-app` — `rome` does not re-wrap them. Actions take the signing key from the local environment, never a flag and never through the MCP server.
+Shipped: the full four-paths surface above (reads + actions), all funded-verified on a live Rome chain. Next: `verify --path solana-program` / `--path from-home` slices · bridge ETH (Wormhole) + outbound (`from-rome`) · `new` (wraps `create-rome-app`). Deploy/build stays orchestrated (Foundry/Hardhat/create-rome-app) — `rome` is the connective tissue + the Rome-unique gaps, not a re-implementation of the EVM toolchain.
