@@ -5,6 +5,7 @@ import { fundHandler, bridgeHandler } from "./bridge.js";
 import { doctor } from "./doctor.js";
 import { diagnoseTx } from "./tx.js";
 import { verifyHandler } from "./verify.js";
+import { getPreset } from "./presets.js";
 import { type Deps } from "./deps.js";
 
 export interface ArgSpec {
@@ -169,6 +170,15 @@ export const CAPABILITIES: Capability[] = [
     "Diagnose a tx: EVM receipt + status, the Solana settlement tx(s) via rome_solanaTxForEvmTx (Rome has no debug_trace*), and a Via link. e.g. rome tx hadrian 0x…",
     [chainArg, { name: "hash", required: true, description: "the EVM tx hash (0x…)" }],
     (a) => diagnoseTx(a.chain, a.hash),
+  ),
+
+  // ── preset: ready Rome toolchain config (read; CLI + MCP) ──
+  verbCap(
+    "preset",
+    "preset",
+    "Emit a ready Rome network config for your toolchain + the Rome quirks. e.g. rome preset foundry hadrian",
+    [{ name: "tool", required: true, description: "foundry or hardhat" }, chainArg],
+    (a) => getPreset(a.tool, a.chain),
   ),
 
   // ── fund / bridge: the "from home" on-ramp (CCTP USDC inbound). CLI-only actions. ──
