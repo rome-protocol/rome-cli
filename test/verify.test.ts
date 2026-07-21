@@ -1,5 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
-import { runVerifySolidity, verifyHandler, type VerifyDeps } from "../src/core/verify.js";
+import {
+  runVerifySolidity,
+  runVerifySolanaProgram,
+  verifyHandler,
+  defaultVerifyDeps,
+  defaultVerifySolanaProgramDeps,
+  type VerifyDeps,
+  type VerifySolanaProgramDeps,
+} from "../src/core/verify.js";
 import { CAPABILITIES } from "../src/core/capabilities.js";
 import { buildMcpTools } from "../src/mcp.js";
 
@@ -50,6 +58,58 @@ describe("runVerifySolidity — both-lane works-gate", () => {
   });
 });
 
+// `verify --path solana-program` — EVM-lane-drives-Solana-program-via-CPI gate.
+// Deploy the CPI wrapper probe, `ping` it (EVM lane) → the probe CPIs SPL Memo. A
+// successful EVM receipt IS the proof (a failed CPI reverts the tx). EVM key only.
+// The Solana-log confirmation (`confirmMemo`) is an opt-in deep check (`--solana-rpc`).
+function spDeps(over: Partial<VerifySolanaProgramDeps>, order: string[] = []): VerifySolanaProgramDeps {
+  return {
+    deployProbe: vi.fn(async () => {
+      order.push("deploy");
+      return "0xprobe00000000000000000000000000000000abcd" as `0x${string}`;
+    }),
+    ping: vi.fn(async () => {
+      order.push("ping");
+      return { hash: "0xpingaaaa00000000000000000000000000000000000000000000000000000000" as `0x${string}`, success: true };
+    }),
+    ...over,
+  };
+}
+
+describe("runVerifySolanaProgram — EVM drives a Solana program via CPI", () => {
+  it("GREEN when the ping tx lands (EVM receipt success); no Solana RPC required", async () => {
+    const order: string[] = [];
+    const r = await runVerifySolanaProgram(spDeps({}, order));
+    expect(order).toEqual(["deploy", "ping"]);
+    expect(r.path).toBe("solana-program");
+    expect(r.cpiLanded).toBe(true);
+    expect(r.memoConfirmed).toBeUndefined(); // deep check not run
+    expect(r.ok).toBe(true);
+  });
+
+  it("RED when the ping tx reverts (a failed CPI reverts the EVM tx)", async () => {
+    const r = await runVerifySolanaProgram(
+      spDeps({ ping: vi.fn(async () => ({ hash: "0xdead00000000000000000000000000000000000000000000000000000000beef" as `0x${string}`, success: false })) }),
+    );
+    expect(r.cpiLanded).toBe(false);
+    expect(r.ok).toBe(false);
+  });
+
+  it("deep check GREEN: ok requires the memo in the Solana settlement logs when confirmMemo is present", async () => {
+    const r = await runVerifySolanaProgram(spDeps({ confirmMemo: vi.fn(async () => ({ settlement: "5Lwke7Wsig", found: true })) }));
+    expect(r.memoConfirmed).toBe(true);
+    expect(r.solanaSettlement).toBe("5Lwke7Wsig");
+    expect(r.ok).toBe(true);
+  });
+
+  it("deep check RED: tx lands but the memo is NOT in the logs → not ok", async () => {
+    const r = await runVerifySolanaProgram(spDeps({ confirmMemo: vi.fn(async () => ({ found: false })) }));
+    expect(r.cpiLanded).toBe(true);
+    expect(r.memoConfirmed).toBe(false);
+    expect(r.ok).toBe(false);
+  });
+});
+
 describe("verify is a key-gated action, never on MCP", () => {
   it("registered as an action requiring a key, and absent from the MCP surface", () => {
     const cap = CAPABILITIES.find((c) => c.id === "verify.verify");
@@ -68,6 +128,23 @@ describe("verify is a key-gated action, never on MCP", () => {
       await expect(verifyHandler({ chain: "hadrian", path: "solidity" })).rejects.toThrow(/ROME_(EVM|SOLANA)_KEY/);
     } finally {
       if (pe !== undefined) process.env.ROME_EVM_KEY = pe;
+      if (ps !== undefined) process.env.ROME_SOLANA_KEY = ps;
+    }
+  });
+
+  it("per-path key scoping: solidity needs the Solana key; solana-program needs only ROME_EVM_KEY", () => {
+    const pe = process.env.ROME_EVM_KEY;
+    const ps = process.env.ROME_SOLANA_KEY;
+    process.env.ROME_EVM_KEY = `0x${"11".repeat(32)}`;
+    delete process.env.ROME_SOLANA_KEY;
+    try {
+      // solidity drives BOTH lanes → demands the Solana key up front
+      expect(() => defaultVerifyDeps("hadrian")).toThrow(/ROME_SOLANA_KEY/);
+      // solana-program is EVM-lane only → builds with just the EVM key, no Solana key
+      expect(() => defaultVerifySolanaProgramDeps("hadrian")).not.toThrow();
+    } finally {
+      if (pe !== undefined) process.env.ROME_EVM_KEY = pe;
+      else delete process.env.ROME_EVM_KEY;
       if (ps !== undefined) process.env.ROME_SOLANA_KEY = ps;
     }
   });

@@ -257,7 +257,25 @@ $ rome verify hadrian --path solidity
 }
 ```
 
-`ok: true` means one contract on Rome answered correctly whether an EVM wallet *or* a Solana wallet drove it — the dual-lane promise, verified on-chain. (`--path solana-program` and `--path from-home` follow.)
+`ok: true` means one contract on Rome answered correctly whether an EVM wallet *or* a Solana wallet drove it — the dual-lane promise, verified on-chain.
+
+### `--path solana-program` — an EVM user drives your Solana program via CPI
+
+Brought a **Solana program**? The gate is different: prove an EVM-lane call reaches it through the CPI precompile. `verify --path solana-program` deploys a thin CPI wrapper (its constructor self-provisions the contract's external-auth PDA), then an EVM-lane `ping` drives the SPL Memo program via CPI. A successful EVM receipt is the proof — a failed CPI reverts the tx. This path needs **only `ROME_EVM_KEY`** (no Solana key — the EVM lane is the whole story).
+
+```console
+$ rome verify hadrian --path solana-program
+{
+  "path": "solana-program",
+  "probe": "0x206d7101…",
+  "program": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+  "evmTx": "0x82aae391…",
+  "cpiLanded": true,
+  "ok": true
+}
+```
+
+Add `--solana-rpc <url>` for the deep check: `verify` resolves the EVM tx to its Solana settlement (`rome_solanaTxForEvmTx`) and confirms the memo landed in the program's logs (`"memoConfirmed": true`). (`--path from-home` follows.)
 
 ---
 
