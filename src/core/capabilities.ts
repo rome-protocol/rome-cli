@@ -1,5 +1,5 @@
 import { getChainFacts, getTokenFacts, getContractFacts, getGasFacts, getBalanceFacts, getProgramFacts } from "./facts.js";
-import { getCpiRecipe, getPatterns } from "./cookbook.js";
+import { getCpiRecipe, getPatterns, getErrors } from "./cookbook.js";
 import { callContract, deployContract, sendContract } from "./actions.js";
 import { fundHandler, bridgeHandler } from "./bridge.js";
 import { doctor } from "./doctor.js";
@@ -106,6 +106,13 @@ export const CAPABILITIES: Capability[] = [
     "Which example repo + guide to use for a build goal.",
     [{ name: "goal", required: false, description: "optional goal keyword (e.g. lending, amm, oracle)" }],
     (a) => getPatterns(a.goal),
+  ),
+  cap(
+    "cookbook",
+    "errors",
+    "Decode a Rome failure → cause + fix (the Rome error taxonomy). A query filters; no query returns the full list.",
+    [{ name: "query", required: false, description: "optional error text / keyword (e.g. Custom(1), gas, cpi, forge)" }],
+    (a) => getErrors(a.query),
   ),
 
   // ── contract verbs: `call` is a read (CLI+MCP); `deploy`/`send` are CLI-only actions (key) ──
