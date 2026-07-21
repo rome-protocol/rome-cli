@@ -33,6 +33,7 @@ rome facts programs devnet         # Solana program ids for a network
 rome cookbook cpi-recipe           # the CPI account-rules + SDK encoders (grounded addresses)
 rome cookbook patterns lending     # which example repo + guide fits a goal
 rome call hadrian 0x… "balanceOf(address) returns (uint256)" 0x…   # read a contract (no key)
+rome doctor hadrian --address 0x…  # preflight: chain live? RPC reachable? program set? wallet funded?
 
 # actions — sign on-chain, need ROME_EVM_KEY (never a flag/log/MCP):
 rome deploy hadrian ./out/Store.json                # deploy a compiled artifact

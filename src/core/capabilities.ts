@@ -2,6 +2,7 @@ import { getChainFacts, getTokenFacts, getContractFacts, getGasFacts, getBalance
 import { getCpiRecipe, getPatterns } from "./cookbook.js";
 import { callContract, deployContract, sendContract } from "./actions.js";
 import { fundHandler, bridgeHandler } from "./bridge.js";
+import { doctor } from "./doctor.js";
 import { type Deps } from "./deps.js";
 
 export interface ArgSpec {
@@ -141,6 +142,15 @@ export const CAPABILITIES: Capability[] = [
       { name: "args", required: false, description: "comma-separated call args" },
     ],
     (a, deps) => sendContract(a.chain, a.address, a.signature, a.args, deps),
+  ),
+
+  // ── doctor: read-only preflight (CLI + MCP) ──
+  verbCap(
+    "doctor",
+    "doctor",
+    "Preflight a chain: is it live, is the RPC reachable, is the program configured, is a wallet funded? e.g. rome doctor hadrian --address 0x…",
+    [chainArg, { name: "address", required: false, description: "optional 0x address to check is funded" }],
+    (a, deps) => doctor(a.chain, a.address, deps),
   ),
 
   // ── fund / bridge: the "from home" on-ramp (CCTP USDC inbound). CLI-only actions. ──
