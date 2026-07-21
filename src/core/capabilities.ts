@@ -4,6 +4,7 @@ import { callContract, deployContract, sendContract } from "./actions.js";
 import { fundHandler, bridgeHandler } from "./bridge.js";
 import { doctor } from "./doctor.js";
 import { diagnoseTx } from "./tx.js";
+import { verifyHandler } from "./verify.js";
 import { type Deps } from "./deps.js";
 
 export interface ArgSpec {
@@ -197,6 +198,15 @@ export const CAPABILITIES: Capability[] = [
       { name: "dry-run", required: false, description: "quote + plan the source txs without signing/broadcasting" },
     ],
     (a) => bridgeHandler(a),
+  ),
+
+  // ── verify: the both-lane works-gate (CLI-only action; EVM key + Solana key) ──
+  verbAction(
+    "verify",
+    "verify",
+    "The both-lane works-gate: deploy a probe and prove the SAME contract answers on the EVM lane AND the Solana lane. Needs ROME_EVM_KEY + ROME_SOLANA_KEY. e.g. rome verify hadrian --path solidity",
+    [chainArg, { name: "path", required: false, description: "builder path (solidity; solana-program + from-home follow)" }],
+    (a) => verifyHandler(a),
   ),
 ];
 
