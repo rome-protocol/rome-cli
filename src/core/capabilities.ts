@@ -3,6 +3,7 @@ import { getCpiRecipe, getPatterns } from "./cookbook.js";
 import { callContract, deployContract, sendContract } from "./actions.js";
 import { fundHandler, bridgeHandler } from "./bridge.js";
 import { doctor } from "./doctor.js";
+import { diagnoseTx } from "./tx.js";
 import { type Deps } from "./deps.js";
 
 export interface ArgSpec {
@@ -151,6 +152,15 @@ export const CAPABILITIES: Capability[] = [
     "Preflight a chain: is it live, is the RPC reachable, is the program configured, is a wallet funded? e.g. rome doctor hadrian --address 0x…",
     [chainArg, { name: "address", required: false, description: "optional 0x address to check is funded" }],
     (a, deps) => doctor(a.chain, a.address, deps),
+  ),
+
+  // ── tx: cross-VM diagnosis (read; CLI + MCP) ──
+  verbCap(
+    "tx",
+    "tx",
+    "Diagnose a tx: EVM receipt + status, the Solana settlement tx(s) via rome_solanaTxForEvmTx (Rome has no debug_trace*), and a Via link. e.g. rome tx hadrian 0x…",
+    [chainArg, { name: "hash", required: true, description: "the EVM tx hash (0x…)" }],
+    (a) => diagnoseTx(a.chain, a.hash),
   ),
 
   // ── fund / bridge: the "from home" on-ramp (CCTP USDC inbound). CLI-only actions. ──
