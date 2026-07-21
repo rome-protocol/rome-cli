@@ -73,8 +73,9 @@ Chains resolve by id, name, or slug (`200010`, `hadrian`, `Rome Hadrian`) — by
 | `fund <chain> --from <src> --amount <usdc>` | `ROME_EVM_KEY` | bridge USDC → Rome **gas** (CCTP); the "from home" on-ramp |
 | `bridge <chain> --from <src> --amount <usdc> [--intent gas\|wrapper]` | `ROME_EVM_KEY` | bridge USDC in as gas or wUSDC |
 | `verify <chain> [--path solidity]` | `ROME_EVM_KEY` + `ROME_SOLANA_KEY` | the **both-lane works-gate**: deploy a probe, drive it from the EVM lane *and* the Solana lane, assert parity |
+| `verify <chain> --path solana-program` | `ROME_EVM_KEY` | the **cross-VM works-gate**: deploy a thin CPI wrapper; an EVM-lane call drives a Solana program (SPL Memo) via CPI. `--solana-rpc` adds the Solana-log deep check |
 
-`fund`/`bridge` orchestrate `@rome-protocol/sdk/bridge` (quote → sign the source burn → settle → register → poll); `verify` orchestrates `submitRomeTx` (EVM lane) + `submitRomeTxSolanaLane` (Solana lane). Every action prints what it did; `fund`/`bridge` preview with `--dry-run`.
+`fund`/`bridge` orchestrate `@rome-protocol/sdk/bridge` (quote → sign the source burn → settle → register → poll); `verify --path solidity` orchestrates `submitRomeTx` (EVM lane) + `submitRomeTxSolanaLane` (Solana lane); `verify --path solana-program` orchestrates `submitRomeTx` into a wrapper that CPIs a Solana program via the CPI precompile (`0xff…08`). Every action prints what it did; `fund`/`bridge` preview with `--dry-run`.
 
 ## Grounding — why the facts are trustworthy
 
@@ -102,7 +103,7 @@ src/
     bridge.ts         fund · bridge — the inbound CCTP flow engine (orchestrates the SDK)
     doctor.ts         preflight checklist
     tx.ts             cross-VM diagnosis (rome_solanaTxForEvmTx; no debug_trace)
-    verify.ts         the both-lane works-gate (+ probe.ts, the bundled Store probe)
+    verify.ts         the path-aware works-gate (+ probe.ts: bundled Store + CPI-Memo probes)
     presets.ts        foundry/hardhat config
     keys.ts           requireEvmKey / requireSolanaKey (env-only)
     eip1193.ts        Node EIP-1193 shim for submitRomeTx
@@ -115,4 +116,4 @@ test/                 per-module unit tests + alignment + behavioral CLI (+ mcp-
 
 ## Roadmap
 
-Shipped: the full four-paths surface above (reads + actions), all funded-verified on a live Rome chain. Next: `verify --path solana-program` / `--path from-home` slices · bridge ETH (Wormhole) + outbound (`from-rome`) · `new` (wraps `create-rome-app`). Deploy/build stays orchestrated (Foundry/Hardhat/create-rome-app) — `rome` is the connective tissue + the Rome-unique gaps, not a re-implementation of the EVM toolchain.
+Shipped: the full four-paths surface above (reads + actions), all funded-verified on a live Rome chain — including `verify --path solana-program` (an EVM-lane call driving a Solana program via CPI). Next: `verify --path from-home` · bridge ETH (Wormhole) + outbound (`from-rome`) · `new` (wraps `create-rome-app`). Deploy/build stays orchestrated (Foundry/Hardhat/create-rome-app) — `rome` is the connective tissue + the Rome-unique gaps, not a re-implementation of the EVM toolchain.

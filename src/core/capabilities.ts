@@ -210,12 +210,16 @@ export const CAPABILITIES: Capability[] = [
     (a) => bridgeHandler(a),
   ),
 
-  // ── verify: the both-lane works-gate (CLI-only action; EVM key + Solana key) ──
+  // ── verify: the path-aware works-gate (CLI-only action; keys vary by path) ──
   verbAction(
     "verify",
     "verify",
-    "The both-lane works-gate: deploy a probe and prove the SAME contract answers on the EVM lane AND the Solana lane. Needs ROME_EVM_KEY + ROME_SOLANA_KEY. e.g. rome verify hadrian --path solidity",
-    [chainArg, { name: "path", required: false, description: "builder path (solidity; solana-program + from-home follow)" }],
+    "The path-aware works-gate. solidity: prove the SAME contract answers on the EVM lane AND the Solana lane (ROME_EVM_KEY + ROME_SOLANA_KEY). solana-program: an EVM-lane call drives a Solana program via CPI (ROME_EVM_KEY). e.g. rome verify hadrian --path solana-program",
+    [
+      chainArg,
+      { name: "path", required: false, description: "builder path: solidity (default) | solana-program (from-home follows)" },
+      { name: "solana-rpc", required: false, description: "Solana RPC for the opt-in deep check (confirm the CPI effect in Solana logs)" },
+    ],
     (a) => verifyHandler(a),
   ),
 ];
