@@ -42,6 +42,7 @@ rome deploy hadrian ./out/Store.json                # deploy a compiled artifact
 rome send   hadrian 0x… "set(uint256)" 42           # write via submitRomeTx
 rome fund   hadrian --from base-sepolia --amount 1  # bridge USDC → Rome gas (CCTP, "from home")
 rome bridge hadrian --from base-sepolia --amount 1 --intent wrapper   # USDC → wUSDC on Rome
+rome verify hadrian --path solidity   # both-lane works-gate (needs ROME_EVM_KEY + ROME_SOLANA_KEY)
 ```
 
 Chains resolve by id, name, or slug (`200010`, `hadrian`, `200010-hadrian`). Output is JSON — pipe it to `jq` or read it in an agent:
