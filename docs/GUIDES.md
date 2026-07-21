@@ -5,6 +5,7 @@ Concrete, copy-paste recipes: real commands with real output, and how to fold `r
 - [Every command, with real output](#every-command-with-real-output)
 - [Integrate into an AI agent (MCP)](#integrate-into-an-ai-agent-mcp)
 - [The agent grounding loop](#the-agent-grounding-loop)
+- [Fund a wallet from another chain (`fund` / `bridge`)](#fund-a-wallet-from-another-chain-fund--bridge)
 - [Shell & scripting recipes](#shell--scripting-recipes)
 - [Use it in CI](#use-it-in-ci)
 - [End-to-end: build a price-reading contract, grounded by rome](#end-to-end-build-a-price-reading-contract-grounded-by-rome)
@@ -148,6 +149,43 @@ $ rome facts chain hadrian          # → rpcUrl, romeEvmProgramId, gas = USDC
 $ rome facts tokens hadrian         # → wUSDC 0xd4cc34b6…, wETH, wSOL (the reserves)
 ```
 The agent now writes against `aerarium`'s pattern with Hadrian's real RPC and the real wrapper addresses — nothing invented.
+
+---
+
+## Fund a wallet from another chain (`fund` / `bridge`)
+
+The **from-home** path: you hold USDC on another chain and want onto Rome. `fund` bridges it in as **native gas**; `bridge --intent wrapper` brings it in as **wUSDC**. Both use Circle CCTP, orchestrated through [`@rome-protocol/sdk`](https://github.com/rome-protocol/rome-sdk-ts)'s `bridge` module — you sign only the source-chain burn; Rome's sponsor pays the settle.
+
+These are **actions**: CLI-only, and they read `ROME_EVM_KEY` from the environment (never a flag, never logged, never on MCP).
+
+**Preview first with `--dry-run`** — quotes the route and shows exactly what you'd sign, spending nothing:
+
+```console
+$ rome fund hadrian --from base-sepolia --amount 0.5 --dry-run
+{
+  "dryRun": true,
+  "route": "usdc-cctp-to-rome",
+  "amountIn": "500000",
+  "amountOut": "500000",
+  "fee": { "bps": 0, "absolute": "0", "asset": "USDC" },
+  "etaSeconds": 1100,
+  "plannedTxs": [
+    { "stepN": 1, "to": "0x036CbD…dCF7e", "description": "Approve TokenMessenger to spend USDC" },
+    { "stepN": 1, "to": "0x8FE6B9…2DAA", "description": "Burn USDC via CCTP, mintRecipient = user's Rome account" }
+  ]
+}
+```
+
+Drop `--dry-run` to execute: `rome` signs + broadcasts the two source txs, signs the trustless-settle authorization (gas intent only), registers the transfer, then polls to completion — printing the transfer id, outcome, and source tx hashes.
+
+```bash
+rome fund   hadrian --from base-sepolia --amount 0.5                    # → native gas on Rome
+rome bridge hadrian --from base-sepolia --amount 0.5 --intent wrapper   # → wUSDC on Rome
+```
+
+Supported source chains come from the registry's bridge config for the target Rome chain — Base Sepolia, Arbitrum Sepolia, Polygon Amoy, Avalanche Fuji, Monad Testnet, Sepolia. Resolve a source by id, name, or slug (`84532`, `"base sepolia"`, `base-sepolia`). CCTP standard attestation takes ~15–20 min, so a real transfer isn't instant; the command polls until it lands.
+
+> The bridge-api base defaults to the devnet orchestrator; override with `--bridge-api <url>` or `ROME_BRIDGE_API`.
 
 ---
 

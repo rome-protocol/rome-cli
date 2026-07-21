@@ -1,6 +1,7 @@
 import { getChainFacts, getTokenFacts, getContractFacts, getGasFacts, getBalanceFacts, getProgramFacts } from "./facts.js";
 import { getCpiRecipe, getPatterns } from "./cookbook.js";
 import { callContract, deployContract, sendContract } from "./actions.js";
+import { fundHandler, bridgeHandler } from "./bridge.js";
 import { type Deps } from "./deps.js";
 
 export interface ArgSpec {
@@ -140,6 +141,35 @@ export const CAPABILITIES: Capability[] = [
       { name: "args", required: false, description: "comma-separated call args" },
     ],
     (a, deps) => sendContract(a.chain, a.address, a.signature, a.args, deps),
+  ),
+
+  // ── fund / bridge: the "from home" on-ramp (CCTP USDC inbound). CLI-only actions. ──
+  verbAction(
+    "fund",
+    "fund",
+    "Fund a wallet: bridge USDC from a source chain into Rome gas (CCTP). Needs ROME_EVM_KEY. e.g. rome fund hadrian --from base-sepolia --amount 1",
+    [
+      chainArg,
+      { name: "from", required: true, description: "source chain (id, name, or slug) holding your USDC" },
+      { name: "amount", required: true, description: "USDC amount to bridge (human, e.g. 1.5)" },
+      { name: "bridge-api", required: false, description: "override the bridge-api base URL" },
+      { name: "dry-run", required: false, description: "quote + plan the source txs without signing/broadcasting" },
+    ],
+    (a) => fundHandler(a),
+  ),
+  verbAction(
+    "bridge",
+    "bridge",
+    "Bridge USDC from a source chain into Rome (CCTP), as gas or a wrapper (wUSDC). Needs ROME_EVM_KEY. e.g. rome bridge hadrian --from base-sepolia --amount 1 --intent wrapper",
+    [
+      chainArg,
+      { name: "from", required: true, description: "source chain (id, name, or slug) holding your USDC" },
+      { name: "amount", required: true, description: "USDC amount to bridge (human, e.g. 1.5)" },
+      { name: "intent", required: false, description: "gas (default) → native gas · wrapper → wUSDC on Rome" },
+      { name: "bridge-api", required: false, description: "override the bridge-api base URL" },
+      { name: "dry-run", required: false, description: "quote + plan the source txs without signing/broadcasting" },
+    ],
+    (a) => bridgeHandler(a),
   ),
 ];
 
