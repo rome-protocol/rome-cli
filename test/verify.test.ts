@@ -2,11 +2,13 @@ import { describe, it, expect, vi } from "vitest";
 import {
   runVerifySolidity,
   runVerifySolanaProgram,
+  runVerifyFromHome,
   verifyHandler,
   defaultVerifyDeps,
   defaultVerifySolanaProgramDeps,
   type VerifyDeps,
   type VerifySolanaProgramDeps,
+  type VerifyFromHomeDeps,
 } from "../src/core/verify.js";
 import { CAPABILITIES } from "../src/core/capabilities.js";
 import { buildMcpTools } from "../src/mcp.js";
@@ -107,6 +109,79 @@ describe("runVerifySolanaProgram — EVM drives a Solana program via CPI", () =>
     expect(r.cpiLanded).toBe(true);
     expect(r.memoConfirmed).toBe(false);
     expect(r.ok).toBe(false);
+  });
+});
+
+// `verify --path from-home` — the round-trip works-gate: bridge USDC IN (wrapper) →
+// act with it on Rome (wUSDC self-transfer) → bridge OUT to attestation-ready. Legs run
+// in order and FAIL FAST (a red leg stops the gate). The out-leg asserts to
+// attestation-ready + claim handle — the destination claim is the user's own step.
+function fhDeps(over: Partial<VerifyFromHomeDeps>, order: string[] = []): VerifyFromHomeDeps {
+  return {
+    bridgeIn: vi.fn(async () => {
+      order.push("in");
+      return { txHash: "0xin", landed: true, wusdcDelta: 200000n };
+    }),
+    act: vi.fn(async () => {
+      order.push("act");
+      return { hash: "0xact" as `0x${string}`, success: true };
+    }),
+    bridgeOut: vi.fn(async () => {
+      order.push("out");
+      return { burnTxHash: "0xburn", claimReady: true };
+    }),
+    ...over,
+  };
+}
+
+describe("runVerifyFromHome — the round-trip works-gate", () => {
+  it("GREEN: in (wUSDC landed) → act → out (claim-ready), in order", async () => {
+    const order: string[] = [];
+    const r = await runVerifyFromHome(fhDeps({}, order));
+    expect(order).toEqual(["in", "act", "out"]);
+    expect(r.path).toBe("from-home");
+    expect(r.legs.in.ok).toBe(true);
+    expect(r.legs.act?.ok).toBe(true);
+    expect(r.legs.out?.ok).toBe(true);
+    expect(r.ok).toBe(true);
+  });
+
+  it("RED + fail-fast: inbound lands no wUSDC → act/out never run", async () => {
+    const order: string[] = [];
+    const d = fhDeps({ bridgeIn: vi.fn(async () => ({ txHash: "0xin", landed: true, wusdcDelta: 0n })) }, order);
+    const r = await runVerifyFromHome(d);
+    expect(r.legs.in.ok).toBe(false);
+    expect(r.ok).toBe(false);
+    expect(d.act).not.toHaveBeenCalled();
+    expect(d.bridgeOut).not.toHaveBeenCalled();
+  });
+
+  it("RED + fail-fast: act reverts → out never runs", async () => {
+    const d = fhDeps({ act: vi.fn(async () => ({ hash: "0xbad" as `0x${string}`, success: false })) });
+    const r = await runVerifyFromHome(d);
+    expect(r.legs.act?.ok).toBe(false);
+    expect(r.ok).toBe(false);
+    expect(d.bridgeOut).not.toHaveBeenCalled();
+  });
+
+  it("RED: out-leg not claim-ready → gate fails", async () => {
+    const r = await runVerifyFromHome(fhDeps({ bridgeOut: vi.fn(async () => ({ burnTxHash: "0xburn", claimReady: false })) }));
+    expect(r.legs.out?.ok).toBe(false);
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe("verifyHandler --path from-home arg contract", () => {
+  it("requires --from and --amount with a clear error (before any network call)", async () => {
+    const pe = process.env.ROME_EVM_KEY;
+    process.env.ROME_EVM_KEY = `0x${"11".repeat(32)}`;
+    try {
+      await expect(verifyHandler({ chain: "hadrian", path: "from-home" })).rejects.toThrow(/--from/);
+      await expect(verifyHandler({ chain: "hadrian", path: "from-home", from: "sepolia" })).rejects.toThrow(/--amount/);
+    } finally {
+      if (pe !== undefined) process.env.ROME_EVM_KEY = pe;
+      else delete process.env.ROME_EVM_KEY;
+    }
   });
 });
 

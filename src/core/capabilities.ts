@@ -226,11 +226,13 @@ export const CAPABILITIES: Capability[] = [
   verbAction(
     "verify",
     "verify",
-    "The path-aware works-gate. solidity: prove the SAME contract answers on the EVM lane AND the Solana lane (ROME_EVM_KEY + ROME_SOLANA_KEY). solana-program: an EVM-lane call drives a Solana program via CPI (ROME_EVM_KEY). e.g. rome verify hadrian --path solana-program",
+    "The path-aware works-gate. solidity: the SAME contract answers on BOTH lanes (ROME_EVM_KEY + ROME_SOLANA_KEY). solana-program: an EVM-lane call drives a Solana program via CPI (ROME_EVM_KEY). from-home: bridge in → act → bridge out to claim-ready (ROME_EVM_KEY; needs --from + --amount; ~20 min). e.g. rome verify hadrian --path from-home --from sepolia --amount 0.2",
     [
       chainArg,
-      { name: "path", required: false, description: "builder path: solidity (default) | solana-program (from-home follows)" },
-      { name: "solana-rpc", required: false, description: "Solana RPC for the opt-in deep check (confirm the CPI effect in Solana logs)" },
+      { name: "path", required: false, description: "builder path: solidity (default) | solana-program | from-home" },
+      { name: "solana-rpc", required: false, description: "solana-program: Solana RPC for the opt-in deep check" },
+      { name: "from", required: false, description: "from-home: source chain holding your USDC" },
+      { name: "amount", required: false, description: "from-home: USDC amount for the round trip (small, e.g. 0.2)" },
     ],
     (a) => verifyHandler(a),
   ),

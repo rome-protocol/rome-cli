@@ -321,7 +321,26 @@ $ rome verify hadrian --path solana-program
 }
 ```
 
-Add `--solana-rpc <url>` for the deep check: `verify` resolves the EVM tx to its Solana settlement (`rome_solanaTxForEvmTx`) and confirms the memo landed in the program's logs (`"memoConfirmed": true`). (`--path from-home` follows.)
+Add `--solana-rpc <url>` for the deep check: `verify` resolves the EVM tx to its Solana settlement (`rome_solanaTxForEvmTx`) and confirms the memo landed in the program's logs (`"memoConfirmed": true`).
+
+### `--path from-home` — the round trip, proven
+
+Coming **from another chain**? This gate proves the whole journey: USDC bridges **in** (as wUSDC), **works** on Rome, and bridges back **out**.
+
+```console
+$ rome verify hadrian --path from-home --from sepolia --amount 0.2
+{
+  "path": "from-home",
+  "legs": {
+    "in":  { "ok": true, "txHash": "0x…", "landed": true, "wusdcDelta": "200000" },
+    "act": { "ok": true, "hash": "0x…" },
+    "out": { "ok": true, "burnTxHash": "0x…", "claimReady": true }
+  },
+  "ok": true
+}
+```
+
+Three legs, in order, failing fast: **in** (CCTP wrapper intent — waits through Circle attestation, ~15–20 min, and asserts the wUSDC actually landed) → **act** (a real wUSDC transfer via `submitRomeTx` — the asset is usable on Rome) → **out** (`bridge --to` back to the source chain, asserted to attestation-ready + a claim handle). The destination claim is your step, as always. Prereqs (checked up front with clear errors): `ROME_EVM_KEY`; USDC + gas on the source chain; gas on Rome; **an activated account** (`rome activate` — the out-leg burns).
 
 ---
 
