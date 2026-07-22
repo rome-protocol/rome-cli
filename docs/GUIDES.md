@@ -153,7 +153,7 @@ Give your coding agent grounded Rome facts so it stops guessing addresses and se
 
 **1. Install** (repo-first; npm publish pending):
 ```bash
-npm install -g github:rome-protocol/rome-cli#v0.7.0
+npm install -g github:rome-protocol/rome-cli#v0.8.0
 ```
 
 **2. Register the MCP server** in your client's config. You don't run or host anything — the client launches `rome mcp` on demand.
@@ -169,7 +169,7 @@ npm install -g github:rome-protocol/rome-cli#v0.7.0
 rome mcp   # starts the stdio server; your client lists the READ tools: facts_chain,
            # facts_tokens, facts_contracts, facts_gas, facts_balance, facts_programs,
            # cookbook_cpi_recipe, cookbook_patterns, cookbook_errors, call, doctor, tx, preset
-           # (actions — deploy/send/fund/bridge/verify — are CLI-only, never on MCP)
+           # (actions — deploy/send/fund/bridge/activate/verify — are CLI-only, never on MCP)
 ```
 
 **4. Use it in a prompt.** Now the agent can call the tools instead of hallucinating:
