@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z, type ZodRawShape } from "zod";
 import { CAPABILITIES, type Capability } from "./core/capabilities.js";
 import { defaultDeps } from "./core/deps.js";
+import { PKG_VERSION } from "./core/version.js";
 
 export interface McpToolDef {
   name: string;
@@ -29,7 +30,7 @@ function inputShape(cap: Capability): ZodRawShape {
 
 /** Start the read-only MCP server over stdio. Holds no keys; every tool is a read. */
 export async function startMcpServer(): Promise<void> {
-  const server = new McpServer({ name: "rome-mcp", version: "0.1.0" });
+  const server = new McpServer({ name: "rome-mcp", version: PKG_VERSION });
   for (const { name, description, capability } of buildMcpTools()) {
     server.registerTool(name, { description, inputSchema: inputShape(capability) }, async (args: Record<string, unknown>) => {
       const strArgs: Record<string, string> = {};

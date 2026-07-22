@@ -40,3 +40,17 @@ describe("preset is a read capability on MCP", () => {
     expect(new Set(buildMcpTools().map((t) => t.name)).has("preset")).toBe(true);
   });
 });
+
+describe("preset notes are tool-specific", () => {
+  it("hardhat: no forge-only guidance leaks into the hardhat notes", () => {
+    const p = getPreset("hardhat", "hadrian");
+    const joined = p.notes.join(" ");
+    expect(joined).not.toMatch(/forge/i);
+    expect(joined).toMatch(/exact gas/i);
+  });
+
+  it("foundry: keeps the forge skip-simulation quirk", () => {
+    const p = getPreset("foundry", "hadrian");
+    expect(p.notes.join(" ")).toMatch(/forge script --skip-simulation/);
+  });
+});

@@ -92,8 +92,8 @@ export const CAPABILITIES: Capability[] = [
   cap(
     "facts",
     "programs",
-    "Solana program ids for a network (devnet | mainnet).",
-    [{ name: "network", required: true, description: "devnet or mainnet" }],
+    "Solana program ids for a network (devnet | mainnet; Rome testnet chains settle on Solana devnet).",
+    [{ name: "network", required: true, description: "devnet or mainnet (testnet settles on the Solana devnet cluster)" }],
     (a) => getProgramFacts(a.network),
   ),
   cap(
