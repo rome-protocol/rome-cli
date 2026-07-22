@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { main, parseRest } from "../src/cli.js";
+import { readFileSync } from "node:fs";
 
 // Drive the REAL CLI dispatch (findCapability + positional-arg mapping + exit codes),
 // not just the capability table — this is the behavioral half of the alignment gate.
@@ -100,5 +101,49 @@ describe("parseRest (positionals + --flags)", () => {
       positionals: ["hadrian", "0xabc", "deposit(uint256)", "1"],
       flags: {},
     });
+  });
+});
+
+describe("CLI guardrails — extra positionals, per-command help, version", () => {
+  it("errors (exit 1) on extra positional args instead of silently dropping them", async () => {
+    const c = capture();
+    const code = await main([
+      "node", "rome", "call", "hadrian",
+      "0x0000000000000000000000000000000000000001",
+      "allowance(address,address) returns (uint256)",
+      "0x0000000000000000000000000000000000000002",
+      "0x0000000000000000000000000000000000000003",
+    ]);
+    c.restore();
+    expect(code).toBe(1);
+    expect(c.err.join("\n")).toMatch(/unexpected extra argument/i);
+    expect(c.err.join("\n")).toMatch(/comma-separated/i);
+  });
+
+  it("prints per-command usage on `rome call --help` and exits 0", async () => {
+    const c = capture();
+    const code = await main(["node", "rome", "call", "--help"]);
+    c.restore();
+    expect(code).toBe(0);
+    const out = c.out.join("\n");
+    expect(out).toMatch(/rome call <chain> <address> <signature> \[args\]/);
+    expect(out).toMatch(/comma-separated/i);
+  });
+
+  it("prints per-command usage for a two-word command (`rome facts chain --help`)", async () => {
+    const c = capture();
+    const code = await main(["node", "rome", "facts", "chain", "--help"]);
+    c.restore();
+    expect(code).toBe(0);
+    expect(c.out.join("\n")).toMatch(/rome facts chain <chain>/);
+  });
+
+  it("--version prints the real package version, not a hardcoded string", async () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    const c = capture();
+    const code = await main(["node", "rome", "--version"]);
+    c.restore();
+    expect(code).toBe(0);
+    expect(c.out.join("\n").trim()).toBe(pkg.version);
   });
 });

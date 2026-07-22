@@ -16,10 +16,16 @@ Two things stall an agent building on Rome: **hallucinated facts** (wrong ids, a
 Repo-first (npm publish pending):
 
 ```bash
-npm install -g github:rome-protocol/rome-cli#v0.8.0
-# or run without installing:
-npx github:rome-protocol/rome-cli#v0.8.0 facts chain hadrian
+# one-shot, no install:
+npx github:rome-protocol/rome-cli facts chain hadrian
+
+# durable install — clone + link (a plain `npm install -g github:…` fails: npm
+# prepares this package's github: dependencies without their own node_modules):
+git clone https://github.com/rome-protocol/rome-cli
+cd rome-cli && npm install && npm install -g .
 ```
+
+Pin a tag (e.g. `github:rome-protocol/rome-cli#v0.8.0`) for reproducible runs.
 
 ## CLI
 

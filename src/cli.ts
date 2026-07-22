@@ -1,7 +1,6 @@
-import { CAPABILITIES, resolveCli } from "./core/capabilities.js";
+import { CAPABILITIES, resolveCli, type Capability } from "./core/capabilities.js";
 import { defaultDeps } from "./core/deps.js";
-
-const VERSION = "0.1.0";
+import { PKG_VERSION } from "./core/version.js";
 
 /** Every CLI invocation path the CLI dispatches ("facts chain", "deploy", …). */
 export function cliCommandTable(): string[] {
@@ -34,6 +33,20 @@ export function parseRest(rest: string[]): { positionals: string[]; flags: Recor
   return { positionals, flags };
 }
 
+/** Per-command usage: `rome <cmd> --help` — the usage line, summary, and each arg. */
+function capHelpText(cap: Capability): string {
+  const usage = cap.args.map((x) => (x.required ? `<${x.name}>` : `[${x.name}]`)).join(" ");
+  const tag = cap.kind === "action" ? "  [needs ROME_EVM_KEY]" : "";
+  const lines = [`Usage: rome ${cap.cliPath}${usage ? " " + usage : ""}${tag}`, "", `  ${cap.summary}`];
+  if (cap.args.length) {
+    lines.push("", "Args:");
+    for (const a of cap.args) {
+      lines.push(`  ${a.name.padEnd(12)} ${a.required ? "(required)" : "(optional)"}  ${a.description}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 function helpText(): string {
   const lines = [
     "rome — Rome Protocol dev CLI + MCP server",
@@ -60,7 +73,7 @@ export async function main(argv: string[]): Promise<number | void> {
     return 0;
   }
   if (first === "--version" || first === "-v") {
-    console.log(VERSION);
+    console.log(PKG_VERSION);
     return 0;
   }
   if (first === "mcp") {
@@ -83,11 +96,23 @@ export async function main(argv: string[]): Promise<number | void> {
   // is a boolean flag ("true"). Positionals fill declared args left-to-right; any
   // extra `--flag` is carried through so handlers can read it.
   const { positionals, flags } = parseRest(rest);
+  if (flags.help !== undefined || flags.h !== undefined) {
+    console.log(capHelpText(cap));
+    return 0;
+  }
   const argObj: Record<string, string> = {};
   let pi = 0;
   for (const spec of cap.args) {
     if (flags[spec.name] !== undefined) argObj[spec.name] = flags[spec.name];
     else if (positionals[pi] !== undefined) argObj[spec.name] = positionals[pi++];
+  }
+  if (pi < positionals.length) {
+    console.error(`Unexpected extra argument(s): ${positionals.slice(pi).join(" ")}`);
+    if (cap.args.some((s) => s.name === "args")) {
+      console.error(`Function args are passed comma-separated in ONE argument, e.g. "0xRecipient…,42".`);
+    }
+    console.error(`See: rome ${cap.cliPath} --help`);
+    return 1;
   }
   for (const [k, v] of Object.entries(flags)) if (!(k in argObj)) argObj[k] = v;
 

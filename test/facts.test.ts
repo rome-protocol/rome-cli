@@ -90,3 +90,17 @@ describe("getGasFacts + getBalanceFacts (RPC via injected deps)", () => {
     expect(r.balanceWei).toBe("5000000000000000000");
   });
 });
+
+describe("getProgramFacts — network edge cases", () => {
+  it("testnet: empty program set carries a note pointing at the Solana devnet cluster", () => {
+    const r = getProgramFacts("testnet");
+    expect(r.programs).toEqual({});
+    expect(r.note).toMatch(/devnet/);
+  });
+
+  it("devnet: populated program set has no note", () => {
+    const r = getProgramFacts("devnet");
+    expect(Object.keys(r.programs).length).toBeGreaterThan(0);
+    expect(r.note).toBeUndefined();
+  });
+});

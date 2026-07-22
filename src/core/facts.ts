@@ -73,7 +73,15 @@ export function getProgramFacts(network: string) {
   if (!KNOWN_NETWORKS.includes(n)) {
     throw new Error(`Unknown network "${network}". Known networks: ${KNOWN_NETWORKS.join(", ")}.`);
   }
-  return { network: n, programs: getPrograms(n) };
+  const programs = getPrograms(n) ?? {};
+  if (Object.keys(programs).length === 0) {
+    const note =
+      n === "testnet"
+        ? "No Solana programs recorded for testnet — Rome testnet chains settle on the Solana devnet cluster; try `rome facts programs devnet`."
+        : "No Solana programs recorded for this network.";
+    return { network: n, programs, note };
+  }
+  return { network: n, programs };
 }
 
 export async function getGasFacts(input: string | number, deps: Deps = defaultDeps) {
