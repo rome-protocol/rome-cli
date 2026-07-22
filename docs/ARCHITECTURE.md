@@ -7,7 +7,7 @@
 ```
         ┌───────────────── capability core (src/core/capabilities.ts) ─────────────────┐
         │  READS (no keys):   facts · cookbook · call · doctor · tx · preset            │
-        │  ACTIONS (key-gated): deploy · send · fund · bridge · verify                  │
+        │  ACTIONS (key-gated): deploy · send · fund · bridge · activate · verify        │
         └───────────────────────────┬───────────────────────────┬─────────────────────┘
                        rome <cmd>  (CLI — all commands)      rome mcp  (stdio MCP server)
                        humans + agent shell-outs             MCP-native agents — READS ONLY
@@ -71,7 +71,9 @@ Chains resolve by id, name, or slug (`200010`, `hadrian`, `Rome Hadrian`) — by
 | `deploy <chain> <artifact> [args]` | `ROME_EVM_KEY` | deploy a compiled artifact, handling Rome's gas quirks |
 | `send <chain> <addr> <sig> [args]` | `ROME_EVM_KEY` | write to a contract via `submitRomeTx` (the correct Rome write path) |
 | `fund <chain> --from <src> --amount <usdc>` | `ROME_EVM_KEY` | bridge USDC → Rome **gas** (CCTP); the "from home" on-ramp |
-| `bridge <chain> --from <src> --amount <usdc> [--intent gas\|wrapper]` | `ROME_EVM_KEY` | bridge USDC in as gas or wUSDC |
+| `bridge <chain> --from <src> --amount <usdc> [--intent gas\|wrapper]` | `ROME_EVM_KEY` | bridge USDC **in** as gas or wUSDC |
+| `bridge <chain> --to <dest> --amount <usdc> [--recipient 0x…]` | `ROME_EVM_KEY` | bridge wUSDC **out**: burn on Rome → claim handle for the destination (you claim there) |
+| `activate <chain>` | `ROME_EVM_KEY` | one-time PDA funding required before the first bridge **out** (idempotent; inbound needs none) |
 | `verify <chain> [--path solidity]` | `ROME_EVM_KEY` + `ROME_SOLANA_KEY` | the **both-lane works-gate**: deploy a probe, drive it from the EVM lane *and* the Solana lane, assert parity |
 | `verify <chain> --path solana-program` | `ROME_EVM_KEY` | the **cross-VM works-gate**: deploy a thin CPI wrapper; an EVM-lane call drives a Solana program (SPL Memo) via CPI. `--solana-rpc` adds the Solana-log deep check |
 
@@ -100,7 +102,8 @@ src/
     facts.ts          chain/token/contract/gas/balance/programs + resolveChainId
     cookbook.ts       cpi-recipe + patterns + errors (the taxonomy) + curated index
     actions.ts        call (read) · deploy · send (viem + submitRomeTx)
-    bridge.ts         fund · bridge — the inbound CCTP flow engine (orchestrates the SDK)
+    bridge.ts         fund · bridge in/out — the CCTP flow engines (orchestrate the SDK)
+    activate.ts       one-time PDA funding for bridge-out (SimpleActivator) + the check
     doctor.ts         preflight checklist
     tx.ts             cross-VM diagnosis (rome_solanaTxForEvmTx; no debug_trace)
     verify.ts         the path-aware works-gate (+ probe.ts: bundled Store + CPI-Memo probes)
@@ -116,4 +119,4 @@ test/                 per-module unit tests + alignment + behavioral CLI (+ mcp-
 
 ## Roadmap
 
-Shipped: the full four-paths surface above (reads + actions), all funded-verified on a live Rome chain — including `verify --path solana-program` (an EVM-lane call driving a Solana program via CPI). Next: `verify --path from-home` · bridge ETH (Wormhole) + outbound (`from-rome`) · `new` (wraps `create-rome-app`). Deploy/build stays orchestrated (Foundry/Hardhat/create-rome-app) — `rome` is the connective tissue + the Rome-unique gaps, not a re-implementation of the EVM toolchain.
+Shipped: the full four-paths surface above (reads + actions), all funded-verified on a live Rome chain — including `verify --path solana-program` (an EVM-lane call driving a Solana program via CPI). Next: `verify --path from-home` · bridge ETH (Wormhole) · `new` (wraps `create-rome-app`). Shipped since: `bridge --to` (CCTP outbound, funded-verified) + `activate`. Deploy/build stays orchestrated (Foundry/Hardhat/create-rome-app) — `rome` is the connective tissue + the Rome-unique gaps, not a re-implementation of the EVM toolchain.

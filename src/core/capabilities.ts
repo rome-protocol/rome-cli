@@ -5,6 +5,7 @@ import { fundHandler, bridgeHandler } from "./bridge.js";
 import { doctor } from "./doctor.js";
 import { diagnoseTx } from "./tx.js";
 import { verifyHandler } from "./verify.js";
+import { activateHandler } from "./activate.js";
 import { getPreset } from "./presets.js";
 import { type Deps } from "./deps.js";
 
@@ -198,16 +199,27 @@ export const CAPABILITIES: Capability[] = [
   verbAction(
     "bridge",
     "bridge",
-    "Bridge USDC from a source chain into Rome (CCTP), as gas or a wrapper (wUSDC). Needs ROME_EVM_KEY. e.g. rome bridge hadrian --from base-sepolia --amount 1 --intent wrapper",
+    "Bridge USDC in (--from <src>: gas or wUSDC) or out (--to <dest>: burn wUSDC → USDC on the destination, which you claim there). Needs ROME_EVM_KEY. e.g. rome bridge hadrian --from base-sepolia --amount 1 --intent wrapper · rome bridge hadrian --to base-sepolia --amount 1",
     [
       chainArg,
-      { name: "from", required: true, description: "source chain (id, name, or slug) holding your USDC" },
+      { name: "from", required: false, description: "IN: source chain (id/name/slug) holding your USDC" },
+      { name: "to", required: false, description: "OUT: destination chain (id/name/slug) to receive USDC — you claim there" },
       { name: "amount", required: true, description: "USDC amount to bridge (human, e.g. 1.5)" },
-      { name: "intent", required: false, description: "gas (default) → native gas · wrapper → wUSDC on Rome" },
+      { name: "intent", required: false, description: "IN only: gas (default) → native gas · wrapper → wUSDC on Rome" },
+      { name: "recipient", required: false, description: "OUT only: destination recipient (default = your address)" },
       { name: "bridge-api", required: false, description: "override the bridge-api base URL" },
-      { name: "dry-run", required: false, description: "quote + plan the source txs without signing/broadcasting" },
+      { name: "dry-run", required: false, description: "quote + plan the txs without signing/broadcasting" },
     ],
     (a) => bridgeHandler(a),
+  ),
+
+  // ── activate: one-time PDA funding, required before the first bridge OUT ──
+  verbAction(
+    "activate",
+    "activate",
+    "One-time account activation for bridging OUT: funds your external-auth PDA so CCTP can create its per-burn event account. Needs ROME_EVM_KEY (~2 USDC; idempotent — skips if already active). Inbound needs no activation. e.g. rome activate hadrian",
+    [chainArg],
+    (a) => activateHandler(a),
   ),
 
   // ── verify: the path-aware works-gate (CLI-only action; keys vary by path) ──
