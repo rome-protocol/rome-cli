@@ -7,6 +7,7 @@ import {
   resolveSourceChain,
   resolveBridgeBase,
   runInboundUsdc,
+  runOutboundUsdc,
   type BridgeDeps,
   type EvmSigner,
 } from "../src/core/bridge.js";
@@ -65,6 +66,7 @@ function cctpInQuote(withSettle: boolean) {
 function mockSdk(quote: ReturnType<typeof cctpInQuote>, order: string[]) {
   return {
     inboundCctpQuoteRequest: realBridge.inboundCctpQuoteRequest,
+    outboundCctpQuoteRequest: realBridge.outboundCctpQuoteRequest,
     userSignedTxs: realBridge.userSignedTxs,
     step1BindingTxIndex: realBridge.step1BindingTxIndex,
     settleTypedDataWithBurn: realBridge.settleTypedDataWithBurn,
@@ -265,6 +267,154 @@ describe("runInboundUsdc — the flow engine (gas intent)", () => {
     if (res.dryRun === true) {
       expect(res.plannedTxs).toHaveLength(2);
       expect(res.route).toBe("cctp-in");
+    }
+  });
+});
+
+// Outbound (from-rome): the user burns wUSDC on Rome (user-signed — NO settle, NO
+// destination sponsor) → the engine registers + polls to attestation-ready → hands back
+// a claim handle. Claiming on the destination is the USER's responsibility.
+const DEST = { chainId: 84532, name: "Base Sepolia", rpcUrl: "https://sepolia.base.org" };
+
+function cctpOutQuote() {
+  return {
+    route: "usdc-cctp-from-rome",
+    direction: "from-rome" as const,
+    amountIn: "1000000",
+    amountOut: "1000000",
+    fee: { bps: 0, absolute: "0", asset: "USDC" },
+    etaSeconds: 90,
+    steps: [
+      {
+        n: 1,
+        chain: "rome-200010",
+        kind: "cctp-burn-usdc",
+        userSigns: true,
+        unsignedTxs: [{ to: "0xBurn" as `0x${string}`, data: "0xburn" as `0x${string}`, description: "cctp burn wUSDC" }],
+      },
+      {
+        n: 2,
+        chain: "evm-84532",
+        kind: "cctp-claim-on-destination",
+        userSigns: true,
+        unsignedTx: null,
+        blockedBy: ["step-1", "circle-attestation"],
+        claimTransmitter: "0xTransmitter",
+        claimDomain: 6,
+      },
+    ],
+  };
+}
+
+function mockSdkOut(quote: ReturnType<typeof cctpOutQuote>, order: string[], claimStatus: string) {
+  return {
+    inboundCctpQuoteRequest: realBridge.inboundCctpQuoteRequest,
+    outboundCctpQuoteRequest: realBridge.outboundCctpQuoteRequest,
+    userSignedTxs: realBridge.userSignedTxs,
+    step1BindingTxIndex: realBridge.step1BindingTxIndex,
+    settleTypedDataWithBurn: realBridge.settleTypedDataWithBurn,
+    transferFlowStatus: realBridge.transferFlowStatus,
+    requestQuote: vi.fn(async () => {
+      order.push("quote");
+      return quote as unknown as realBridge.Quote;
+    }),
+    registerTransfer: vi.fn(async (_p: unknown) => {
+      order.push("register");
+      return { id: "tr_out", route: "usdc-cctp-from-rome", outcome: "pending", steps: [] } as unknown as realBridge.TransferRecord;
+    }),
+    getTransfer: vi.fn(async () => {
+      order.push("poll");
+      return {
+        id: "tr_out",
+        route: "usdc-cctp-from-rome",
+        outcome: "pending",
+        steps: [{ n: 2, kind: "cctp-claim-on-destination", status: claimStatus }],
+      } as unknown as realBridge.TransferRecord;
+    }),
+  };
+}
+
+describe("runOutboundUsdc — from-rome, user claims on destination", () => {
+  let order: string[];
+  beforeEach(() => {
+    order = [];
+  });
+
+  it("quotes (from-rome) → signs the Rome burn → registers WITHOUT settle → polls to claim-ready → hands back the user-owned claim handle", async () => {
+    const quote = cctpOutQuote();
+    const sdk = mockSdkOut(quote, order, "ready");
+    const signer = mockSigner(order);
+    const res = await runOutboundUsdc({
+      romeChainId: 200010,
+      base: "https://bridge-api.example",
+      romeRpcUrl: "https://rome.example",
+      dest: DEST,
+      amountBaseUnits: 1_000_000n,
+      address: ADDR,
+      deps: makeDeps(sdk, signer),
+    });
+
+    // one burn send, NO settle sign; register + poll
+    expect(order).toEqual(["quote", "send", "register", "poll"]);
+    expect(signer.signTypedData).not.toHaveBeenCalled();
+
+    // requested from-rome for the right destination + amount
+    const req = (sdk.requestQuote as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(req).toMatchObject({ asset: "USDC", direction: "from-rome", amount: "1000000", destinationChainId: 84532 });
+
+    // register bound to the burn hash, WITHOUT a settle sig (outbound needs none)
+    const regArg = (sdk.registerTransfer as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Record<string, unknown>;
+    expect(regArg.step1TxHash).toBe("0xhash0");
+    expect(regArg.userSettleSig).toBeUndefined();
+
+    expect(res.dryRun).toBe(false);
+    if (res.dryRun === false) {
+      expect(res.transferId).toBe("tr_out");
+      expect(res.burnTxHash).toBe("0xhash0");
+      expect(res.destinationChainId).toBe(84532);
+      expect(res.claim.yourResponsibility).toBe(true);
+      expect(res.claim.status).toBe("ready");
+      expect(res.claim.transmitter).toBe("0xTransmitter");
+    }
+  });
+
+  it("refuses to sign a quote that isn't from-rome (direction guard)", async () => {
+    const quote = { ...cctpOutQuote(), direction: "to-rome" as const };
+    const sdk = mockSdkOut(quote, order, "ready");
+    await expect(
+      runOutboundUsdc({
+        romeChainId: 200010,
+        base: "b",
+        romeRpcUrl: "r",
+        dest: DEST,
+        amountBaseUnits: 1_000_000n,
+        address: ADDR,
+        deps: makeDeps(sdk, mockSigner(order)),
+      }),
+    ).rejects.toThrow(/from-rome/);
+  });
+
+  it("dry-run quotes + plans the burn but signs/registers NOTHING", async () => {
+    const quote = cctpOutQuote();
+    const sdk = mockSdkOut(quote, order, "ready");
+    const signer = mockSigner(order);
+    const res = await runOutboundUsdc({
+      romeChainId: 200010,
+      base: "https://bridge-api.example",
+      romeRpcUrl: "https://rome.example",
+      dest: DEST,
+      amountBaseUnits: 1_000_000n,
+      address: ADDR,
+      dryRun: true,
+      deps: makeDeps(sdk, signer),
+    });
+    expect(order).toEqual(["quote"]);
+    expect(signer.sendTx).not.toHaveBeenCalled();
+    expect(sdk.registerTransfer).not.toHaveBeenCalled();
+    expect(res.dryRun).toBe(true);
+    if (res.dryRun === true) {
+      expect(res.plannedTxs).toHaveLength(1);
+      expect(res.route).toBe("usdc-cctp-from-rome");
     }
   });
 });
