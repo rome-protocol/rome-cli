@@ -1,6 +1,6 @@
 {
   "name": "@rome-protocol/cli",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "rome — the Rome Protocol dev CLI and MCP server: grounded chain facts and build patterns for humans and AI agents.",
   "type": "module",
   "bin": {
