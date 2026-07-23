@@ -1,10 +1,10 @@
 <!--
-CANONICAL AGENTS.md (v3.1). Ships in every public Rome repo + the create-rome-app
+CANONICAL AGENTS.md (v3.2). Ships in every public Rome repo + the create-rome-app
 scaffold. Public-safe: no internal hostnames, infra/platform names, or internal
-repo paths. Links marked (docs) resolve once the docs site publishes; npm packages
-resolve at their publish. Organized by where the builder starts — the depth lives
-in the docs + the example repos it points to. Keep it short; an agent reads it
-before writing a line.
+repo paths. v3.2: the `rome` CLI + MCP server shipped (rome-protocol/rome-cli) —
+tooling references are now real commands, not futures. Organized by where the
+builder starts — the depth lives in the docs + the example repos it points to.
+Keep it short; an agent reads it before writing a line.
 -->
 # AGENTS.md — building on Rome with an AI coding agent
 
@@ -33,7 +33,7 @@ Keep **one** source of truth, written authority-agnostic, and open the other lan
 
 ### You're building greenfield — bring your idea
 Use both sides from day one: one pool both audiences trade, one market both borrow from, an oracle that brings Solana prices into the EVM. Decide the architecture up front — see *Which side is your core?* below. Resolve everything from the registry; use the SDK for writes.
-**Read:** [rome-dex](https://github.com/rome-protocol/rome-dex), [appia](https://github.com/rome-protocol/appia), [rome-oracle-gateway](https://github.com/rome-protocol/rome-oracle-gateway). **Scaffold:** `create-rome-app` (ships with the docs release).
+**Read:** [rome-dex](https://github.com/rome-protocol/rome-dex), [appia](https://github.com/rome-protocol/appia), [rome-oracle-gateway](https://github.com/rome-protocol/rome-oracle-gateway). **Scaffold:** `rome new my-app --chain hadrian` (wraps [create-rome-app](https://github.com/rome-protocol/create-rome-app); pre-wires the chain and prints the fund → deploy → demo → verify lifecycle).
 
 ### Your users are on their home turf — reach Rome from another chain
 Your users don't move — from their home chain (an L2, Solana, …) they reach your Rome app without leaving. The bridge is **on-chain**: `RomeBridgeWithdraw` (egress from Rome) + the rome-evm `settle_inbound_bridge` program (inbound credit, authorized by the user's own signed **EIP-712** intent). Transport is Circle CCTP (USDC) or Wormhole. The off-chain **`rome-bridge-api`** orchestrates it: quote a route → verify the source tx → sponsor the settle fee.
@@ -47,22 +47,22 @@ Which side holds the core logic is a **soft, per-app judgment** — weigh existi
 For example, performance might tip it: native can be much cheaper than the EVM interpreter for heavy logic (one swap we measured ran ~6× cheaper) — consider it if you have a hot compute-heavy path. It's one input, not a rule.
 
 ## Getting funded — USDC is the gas token; bridge it in
-Every Rome chain's gas token is **USDC** (Circle). **There is no Rome faucet.** Fund a wallet by **bridging USDC into Rome** from a chain where you already have it: get testnet USDC on a source chain (Sepolia, an L2, or Solana) from *that chain's* own faucet, then bridge to Hadrian/Martius (the on-chain `settle_inbound_bridge`, orchestrated by `rome-bridge-api`; CCTP for USDC).
+Every Rome chain's gas token is **USDC** (Circle). **There is no Rome faucet.** Fund a wallet by **bridging USDC into Rome** from a chain where you already have it: get testnet USDC on a source chain (Sepolia, an L2, or Solana) from *that chain's* own faucet, then bridge to Hadrian/Martius (the on-chain `settle_inbound_bridge`, orchestrated by `rome-bridge-api`; CCTP for USDC). One command: `rome fund <chain> --from sepolia --amount 1`. Holding ETH instead? `rome bridge <chain> --from sepolia --amount 0.002 --asset eth` lands it as wETH (Wormhole). Bridging **out** (`--to`) is also one command — note the first outbound needs a one-time `rome activate <chain>` (~2 USDC), and the destination claim is your own step.
 
 ## The rules that bite on every path (different from vanilla EVM)
 
 1. **Every write goes through the SDK.** On the EVM lane use `submitRomeTx` (not raw `wagmi`/`ethers`/`viem` `writeContract`/`sendTransaction` — Rome writes have specific fee + submission semantics). On the **Solana lane** (a Solana wallet driving your EVM app) use `submitRomeTxSolanaLane`. Reads stay vanilla.
 2. **Gas: the estimate over-predicts; the charge is exact.** `eth_estimateGas` can over-predict by a large factor — Rome charges the exact gas used, so don't hard-fail or size budgets off a high estimate. A plain native-token transfer costs **~1.48M gas** (not 21k); budget for it in scripts and sweeps.
 3. **Calling Solana from Solidity (CPI — the differentiator).** Precompiles: **CPI `0xFF…08`**, **Helper `0xFF…09`**, **Withdraw `0x42…16`**. The account rules agents get wrong: the accounts array must be **non-empty**; the **operator and the program_id must NOT** appear in it; to sign as your contract use `HELPER.pda(address(this))` as the signer (the precompile signs as `msg.sender`, so a router contract cannot sign a *user's* PDA). Full ABI + per-selector billing: the precompile reference (docs).
-4. **Never hardcode addresses — read the registry.** Chain ids, RPC URLs, contract addresses, token mints, and Solana program ids all come from **`@rome-protocol/registry`** (or the `rome-mcp` `getChain`/`getTokens`/`getContracts` tools). Hardcoded values drift and break across deploys.
+4. **Never hardcode addresses — read the registry.** Chain ids, RPC URLs, contract addresses, token mints, and Solana program ids all come from **`@rome-protocol/registry`** (or the `rome` CLI/MCP `facts_chain`/`facts_tokens`/`facts_contracts` tools). Hardcoded values drift and break across deploys.
 5. **Test both lanes with a fresh wallet.** A feature must work on the EVM lane (MetaMask) *and* the Solana lane (Phantom). Verify each with a brand-new wallet and a tiny amount before claiming done.
-6. **When a tx fails, use the taxonomy + the cross-VM map.** Rome surfaces specific failures (rent-starved pool payer or StateHolder, emulation-vs-simulation mismatches, nonce races). Match them against the error taxonomy (docs). To see the Solana settlement of a Rome tx, map it with `solanaTxForEvmTx`.
+6. **When a tx fails, use the taxonomy + the cross-VM map.** Rome surfaces specific failures (rent-starved pool payer or StateHolder, emulation-vs-simulation mismatches, nonce races). Match them against the taxonomy: `rome cookbook errors <query>`. To see the Solana settlement of a Rome tx, map it with `rome tx <chain> <hash>` (raw RPC: `rome_solanaTxForEvmTx`).
 
 ## The SDK — `@rome-protocol/sdk`
 The TypeScript SDK ([`rome-sdk-ts`](https://github.com/rome-protocol/rome-sdk-ts)) is your write path and your CPI toolkit: `submitRomeTx` + fee sizing, PDA/ATA derivation, CPI `invoke`/`invoke_signed` encoders, precompile bindings, and a `/bridge` module. For the **Solana lane**, `submitRomeTxSolanaLane` mirrors `submitRomeTx` (a Solana wallet drives your EVM app; `buildFundLeg`/`buildSweepLeg` move value in/out — the synthetic holds nothing at rest). Use it for every write and every Solana-from-Solidity call rather than hand-rolling calldata.
 
-## Live facts for your agent
-Live chain facts (ids, RPC, addresses, mints, program ids) come from **`@rome-protocol/registry`** (see rule 4). A read-only **`rome-mcp`** server — registry / balance / gas / bridge-quote, no keys, no faucet — is coming with the docs release; until then, read the registry directly. Your app always does the signing, via the SDK.
+## Your tool — the `rome` CLI + MCP server
+[`rome-cli`](https://github.com/rome-protocol/rome-cli) is the dev CLI + MCP server built for exactly this file's reader (`npm i -g github:rome-protocol/rome-cli` — pin a tag for reproducibility). **Reads** run on both surfaces, no keys: `facts` (chain/tokens/contracts/gas/balance/programs) · `cookbook` (patterns / cpi-recipe / errors) · `call` · `doctor` · `tx` · `preset` (foundry/hardhat config). Register the MCP server once — `{"mcpServers": {"rome": {"command": "rome", "args": ["mcp"]}}}` — and the tools are `facts_chain`, `facts_tokens`, `facts_contracts`, `cookbook_patterns`, `cookbook_errors`, `doctor`, `tx`, `preset`, …. **Actions** are CLI-only and key-gated (`ROME_EVM_KEY` from the environment, never a flag, never on MCP): `new` · `deploy` · `send` · `fund` · `bridge` · `activate` · `verify`. The MCP surface can never sign or move funds.
 
 ## Verify before you claim done
-Before saying a change works: check RPC config, confirm every write goes through `submitRomeTx`, and run a **both-lane smoke** against devnet with a fresh wallet and a tiny amount (fund → deploy → act → assert on each lane). A scaffold + one-command self-check are coming with the docs release.
+Before saying a change works: check RPC config, confirm every write goes through `submitRomeTx`, and run a **both-lane smoke** against devnet with a fresh wallet and a tiny amount. The one-command works-gate is **`rome verify <chain> --path <solidity|solana-program|from-home>`** — dual-lane parity for a contract, an EVM-lane call driving a Solana program via CPI, or the full bridge-in → act → bridge-out round trip. For a scaffolded app, `npm run demo` is the funded dual-lane proof.
