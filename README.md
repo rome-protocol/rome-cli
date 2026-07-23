@@ -1,6 +1,12 @@
 # rome — the Rome Protocol dev CLI + MCP server
 
-`rome` gives a builder — human or AI agent — **grounded chain facts** and the **right build pattern** for Rome Protocol, through two aligned surfaces over one core:
+> **Rome Protocol runs EVM chains natively inside the Solana runtime** — Solidity apps call Solana programs atomically (CPI), and Solana users drive EVM apps: two VMs, one chain, one block.
+
+- **Single state** — EVM contracts and Solana programs share one state; no bridging or sync delay.
+- **Atomic CPI access** — Solidity calls any Solana program directly (SPL Token, Meteora, …) inside one atomic transaction.
+- **App Sovereignty** — each app runs its own EVM chain with a custom gas token and captures its own fee revenue.
+
+`rome` gives a builder — human or AI agent — **grounded chain facts**, the **right build pattern**, and the **Rome-unique actions** (scaffold, fund, bridge, verify) through two aligned surfaces over one core:
 
 - **`rome <group> <command>`** — a CLI for humans and agent shell-outs.
 - **`rome mcp`** — the same capabilities as an [MCP](https://modelcontextprotocol.io) server for MCP-native agents.
@@ -9,7 +15,7 @@ Both surfaces expose the **same** capabilities with the same names — an agent 
 
 Two things stall an agent building on Rome: **hallucinated facts** (wrong ids, addresses, selectors) and **not knowing the pattern** (how to CPI, which example to copy). `rome` answers both, read-only, from the live registry and the SDK.
 
-**Docs:** [`docs/GUIDES.md`](docs/GUIDES.md) — real usage + how to fold it into an agent, a shell script, or CI · [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how it's built, every capability, the security model, and CLI-vs-MCP.
+**Docs:** [`docs/GUIDES.md`](docs/GUIDES.md) — real usage + how to fold it into an agent, a shell script, or CI · [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how it's built, every capability, the security model, and CLI-vs-MCP. For how EVM execution works inside Solana — and the four ways to build on it — see the **[Rome Protocol Documentation](https://docs.rome.builders)**.
 
 ## Install
 
@@ -44,12 +50,18 @@ rome call hadrian 0x… "balanceOf(address) returns (uint256)" 0x…   # read a 
 rome doctor hadrian --address 0x…  # preflight: chain live? RPC reachable? program set? wallet funded?
 rome tx hadrian 0x…                # diagnose a tx: EVM receipt + the Solana settlement tx(s) + a Via link
 
-# actions — sign on-chain, need ROME_EVM_KEY (never a flag/log/MCP):
+# actions — CLI-only (never on MCP); signing ones read ROME_EVM_KEY from the env:
+rome new my-app --chain hadrian                     # scaffold a dual-lane app (keyless; wraps create-rome-app)
 rome deploy hadrian ./out/Store.json                # deploy a compiled artifact
 rome send   hadrian 0x… "set(uint256)" 42           # write via submitRomeTx
 rome fund   hadrian --from base-sepolia --amount 1  # bridge USDC → Rome gas (CCTP, "from home")
-rome bridge hadrian --from base-sepolia --amount 1 --intent wrapper   # USDC → wUSDC on Rome
-rome verify hadrian --path solidity   # both-lane works-gate (needs ROME_EVM_KEY + ROME_SOLANA_KEY)
+rome bridge hadrian --from base-sepolia --amount 1 --intent wrapper   # USDC in → wUSDC on Rome
+rome bridge hadrian --from sepolia --amount 0.002 --asset eth         # ETH in (Wormhole) → wETH on Rome
+rome bridge hadrian --to base-sepolia --amount 1    # bridge OUT: burn on Rome → you claim on the destination
+rome activate hadrian                               # one-time account activation before your first bridge out
+rome verify hadrian --path solidity                 # dual-lane works-gate (+ ROME_SOLANA_KEY)
+rome verify hadrian --path solana-program           # an EVM-lane call drives a Solana program via CPI
+rome verify hadrian --path from-home --from sepolia --amount 0.2   # bridge in → act → bridge out, proven
 ```
 
 Chains resolve by id, name, or slug (`200010`, `hadrian`, `200010-hadrian`). Output is JSON — pipe it to `jq` or read it in an agent:
@@ -88,7 +100,7 @@ The client (Claude Code / Claude Desktop / Cursor / …) spawns `rome mcp` as a 
 ## What it is — two layers
 
 - **Grounding — read-only, on both CLI + MCP**: `facts` + `cookbook` + `call`. Kills hallucination, routes you to the right pattern, reads contracts. Holds no keys — safe to wire into any agent.
-- **Actions — CLI-only, key-gated, never on MCP**: `deploy` / `send` (contracts) and `fund` / `bridge` (the "from home" on-ramp: bridge USDC in as gas or wUSDC via CCTP). These sign, so they read the key from the environment (`ROME_EVM_KEY`) — never a flag, never logged, never through the MCP server. Every action prints what it did; funding previews with `--dry-run`.
+- **Actions — CLI-only, never on MCP**: `new` (scaffold — keyless, wraps `create-rome-app`), `deploy` / `send` (contracts), `fund` / `bridge` (USDC via CCTP in as gas or wUSDC, ETH via Wormhole in as wETH; `--to` bridges out — you claim on the destination), `activate` (one-time account funding before the first bridge out), and `verify` (the works-gate: dual-lane parity, EVM→CPI→Solana-program, or the from-home round trip). Signing actions read the key from the environment (`ROME_EVM_KEY`) — never a flag, never logged, never through the MCP server. Every action prints what it did; bridging previews with `--dry-run`.
 - Everything is sourced from [`@rome-protocol/registry`](https://github.com/rome-protocol/rome-registry) + the chain's RPC + the SDK's `@rome-protocol/sdk/bridge` — nothing chain-specific is hardcoded.
 - Still orchestrates, doesn't replace: heavy contract builds stay in Foundry / Hardhat; scaffolding is [`create-rome-app`](https://github.com/rome-protocol/create-rome-app); library writes use [`@rome-protocol/sdk`](https://github.com/rome-protocol/rome-sdk-ts).
 

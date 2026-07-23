@@ -122,4 +122,4 @@ test/                 per-module unit tests + alignment + behavioral CLI (+ mcp-
 
 ## Roadmap
 
-Shipped: the full four-paths surface above (reads + actions), all funded-verified on a live Rome chain — including `verify --path solana-program` (an EVM-lane call driving a Solana program via CPI). Next: `verify --path from-home` · bridge ETH (Wormhole) · `new` (wraps `create-rome-app`). Shipped since: `bridge --to` (CCTP outbound, funded-verified) + `activate`. Deploy/build stays orchestrated (Foundry/Hardhat/create-rome-app) — `rome` is the connective tissue + the Rome-unique gaps, not a re-implementation of the EVM toolchain.
+Shipped: the full four-paths surface above — 13 reads + 7 actions (`new` · `deploy` · `send` · `fund` · `bridge` in/out for USDC-CCTP and ETH-Wormhole · `activate` · `verify` across solidity / solana-program / from-home), every action funded-verified on a live Rome chain. Deploy/build stays orchestrated (Foundry/Hardhat/create-rome-app) — `rome` is the connective tissue + the Rome-unique gaps, not a re-implementation of the EVM toolchain.
