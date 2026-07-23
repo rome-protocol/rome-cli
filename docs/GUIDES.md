@@ -5,6 +5,7 @@ Concrete, copy-paste recipes: real commands with real output, and how to fold `r
 - [Every command, with real output](#every-command-with-real-output)
 - [Integrate into an AI agent (MCP)](#integrate-into-an-ai-agent-mcp)
 - [The agent grounding loop](#the-agent-grounding-loop)
+- [Start an app (`rome new`)](#start-an-app-rome-new)
 - [Fund a wallet from another chain (`fund` / `bridge`)](#fund-a-wallet-from-another-chain-fund--bridge)
 - [Bridge out of Rome (`bridge --to`) + `activate`](#bridge-out-of-rome-bridge---to--activate)
 - [Prove it works — `rome verify`](#prove-it-works--rome-verify)
@@ -169,7 +170,7 @@ npm install -g github:rome-protocol/rome-cli#v0.8.0
 rome mcp   # starts the stdio server; your client lists the READ tools: facts_chain,
            # facts_tokens, facts_contracts, facts_gas, facts_balance, facts_programs,
            # cookbook_cpi_recipe, cookbook_patterns, cookbook_errors, call, doctor, tx, preset
-           # (actions — deploy/send/fund/bridge/activate/verify — are CLI-only, never on MCP)
+           # (actions — new/deploy/send/fund/bridge/activate/verify — are CLI-only, never on MCP)
 ```
 
 **4. Use it in a prompt.** Now the agent can call the tools instead of hallucinating:
@@ -201,6 +202,29 @@ $ rome facts tokens hadrian         # → wUSDC 0xd4cc34b6…, wETH, wSOL (the r
 The agent now writes against `aerarium`'s pattern with Hadrian's real RPC and the real wrapper addresses — nothing invented.
 
 ---
+
+## Start an app (`rome new`)
+
+The scaffold front door. Wraps [`create-rome-app`](https://github.com/rome-protocol/create-rome-app) (the canonical dual-lane scaffolder — a Vault contract + both lanes + a Vite UI), then adds what the scaffolder can't know: your **chain**, resolved from the registry and pre-wired into the app's `.env`. Keyless — it signs nothing (the key stays out until you fund/deploy).
+
+```console
+$ rome new my-app --chain hadrian
+{
+  "app": "my-app",
+  "chainId": 200010,
+  "chainName": "Rome Hadrian",
+  "next": [
+    "cd my-app && npm install",
+    "# fund the wallets in .env (gas is USDC — bridge it in; no faucet):",
+    "rome fund hadrian --from base-sepolia --amount 1",
+    "npm run deploy      # deploy the Vault to Rome Hadrian",
+    "npm run demo        # the funded dual-lane proof (MetaMask + Phantom → one Vault)",
+    "rome verify hadrian   # the works-gate, any path"
+  ]
+}
+```
+
+The `next` steps are the whole lifecycle in this CLI's own commands — scaffold → fund → deploy → prove. Templates live in `create-rome-app` (today: the dual-lane Vault, i.e. the *bring-your-idea* path); as per-path templates land there, `new` grows matching flags.
 
 ## Fund a wallet from another chain (`fund` / `bridge`)
 
