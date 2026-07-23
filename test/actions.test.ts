@@ -20,10 +20,13 @@ describe("capability kinds", () => {
     }
   });
 
-  it("there is at least one action, and actions require a key", () => {
+  it("there is at least one action; every action requires a key EXCEPT the explicit keyless set", () => {
     const actions = CAPABILITIES.filter((c) => c.kind === "action");
     expect(actions.length).toBeGreaterThan(0);
-    for (const a of actions) expect(a.requiresKey).toBe(true);
+    // `new` scaffolds to disk but signs nothing — the ONLY keyless action. Anything
+    // else keyless is a bug: signing actions must fail fast on a missing env key.
+    const KEYLESS = new Set(["new.new"]);
+    for (const a of actions) expect(a.requiresKey, a.id).toBe(!KEYLESS.has(a.id));
   });
 });
 

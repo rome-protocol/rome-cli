@@ -6,6 +6,7 @@ import { doctor } from "./doctor.js";
 import { diagnoseTx } from "./tx.js";
 import { verifyHandler } from "./verify.js";
 import { activateHandler } from "./activate.js";
+import { newHandler } from "./new.js";
 import { getPreset } from "./presets.js";
 import { type Deps } from "./deps.js";
 
@@ -46,13 +47,16 @@ function mkCap(
   summary: string,
   args: ArgSpec[],
   handler: Capability["handler"],
+  requiresKey?: boolean,
 ): Capability {
   // id stays group.command (stable). CLI + MCP names use single-verb form for verbs.
   // MCP tool names use underscores only (some clients reject hyphens); derivation is
   // deterministic → alignment holds (see alignment.test.ts).
+  // requiresKey defaults by kind; a keyless action (e.g. `new` — writes to disk,
+  // signs nothing) overrides it while staying CLI-only.
   const cliPath = verb ? command : `${group} ${command}`;
   const mcpTool = (verb ? command : `${group}_${command}`).replace(/-/g, "_");
-  return { id: `${group}.${command}`, group, command, verb, cliPath, mcpTool, summary, kind, requiresKey: kind === "action", args, handler };
+  return { id: `${group}.${command}`, group, command, verb, cliPath, mcpTool, summary, kind, requiresKey: requiresKey ?? kind === "action", args, handler };
 }
 
 // grouped read (CLI+MCP) / grouped action (CLI-only, key).
@@ -63,6 +67,9 @@ const verbCap = (group: string, command: string, summary: string, args: ArgSpec[
   mkCap("read", true, group, command, summary, args, handler);
 const verbAction = (group: string, command: string, summary: string, args: ArgSpec[], handler: Capability["handler"]) =>
   mkCap("action", true, group, command, summary, args, handler);
+// keyless action: CLI-only (never MCP) but needs no signing key (e.g. scaffolding).
+const verbActionKeyless = (group: string, command: string, summary: string, args: ArgSpec[], handler: Capability["handler"]) =>
+  mkCap("action", true, group, command, summary, args, handler, false);
 
 const chainArg: ArgSpec = { name: "chain", required: true, description: "chain id, name, or slug (e.g. 200010 or hadrian)" };
 
@@ -211,6 +218,18 @@ export const CAPABILITIES: Capability[] = [
       { name: "dry-run", required: false, description: "quote + plan the txs without signing/broadcasting" },
     ],
     (a) => bridgeHandler(a),
+  ),
+
+  // ── new: scaffold front door (wraps create-rome-app; keyless, CLI-only) ──
+  verbActionKeyless(
+    "new",
+    "new",
+    "Scaffold a dual-lane Rome app (wraps create-rome-app) with the chain pre-wired from the registry, then the lifecycle next-steps: fund → deploy → demo → verify. No key needed. e.g. rome new my-app --chain hadrian",
+    [
+      { name: "name", required: true, description: "app name (becomes the directory + package name)" },
+      { name: "chain", required: false, description: "Rome chain to pre-wire (id, name, or slug; default hadrian)" },
+    ],
+    (a) => newHandler(a),
   ),
 
   // ── activate: one-time PDA funding, required before the first bridge OUT ──

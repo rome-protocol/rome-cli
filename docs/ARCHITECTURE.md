@@ -7,7 +7,7 @@
 ```
         ┌───────────────── capability core (src/core/capabilities.ts) ─────────────────┐
         │  READS (no keys):   facts · cookbook · call · doctor · tx · preset            │
-        │  ACTIONS (key-gated): deploy · send · fund · bridge · activate · verify        │
+        │  ACTIONS (CLI-only): new · deploy · send · fund · bridge · activate · verify   │
         └───────────────────────────┬───────────────────────────┬─────────────────────┘
                        rome <cmd>  (CLI — all commands)      rome mcp  (stdio MCP server)
                        humans + agent shell-outs             MCP-native agents — READS ONLY
@@ -74,6 +74,7 @@ Chains resolve by id, name, or slug (`200010`, `hadrian`, `Rome Hadrian`) — by
 | `bridge <chain> --from <src> --amount <usdc> [--intent gas\|wrapper]` | `ROME_EVM_KEY` | bridge USDC **in** as gas or wUSDC |
 | `bridge <chain> --to <dest> --amount <usdc> [--recipient 0x…]` | `ROME_EVM_KEY` | bridge wUSDC **out**: burn on Rome → claim handle for the destination (you claim there) |
 | `activate <chain>` | `ROME_EVM_KEY` | one-time PDA funding required before the first bridge **out** (idempotent; inbound needs none) |
+| `new <app-name> [--chain <chain>]` | *none* (keyless) | scaffold a dual-lane app — wraps `create-rome-app`, pre-wires the chain from the registry into `.env`, prints the lifecycle next-steps (fund → deploy → demo → verify). CLI-only: MCP never writes to disk |
 | `verify <chain> [--path solidity]` | `ROME_EVM_KEY` + `ROME_SOLANA_KEY` | the **both-lane works-gate**: deploy a probe, drive it from the EVM lane *and* the Solana lane, assert parity |
 | `verify <chain> --path solana-program` | `ROME_EVM_KEY` | the **cross-VM works-gate**: deploy a thin CPI wrapper; an EVM-lane call drives a Solana program (SPL Memo) via CPI. `--solana-rpc` adds the Solana-log deep check |
 | `verify <chain> --path from-home --from <src> --amount <usdc>` | `ROME_EVM_KEY` | the **round-trip works-gate**: bridge in (wrapper) → act on Rome → bridge out to claim-ready. Waits on Circle attestation (~20 min); needs an activated account |
@@ -105,6 +106,7 @@ src/
     actions.ts        call (read) · deploy · send (viem + submitRomeTx)
     bridge.ts         fund · bridge in/out — the CCTP flow engines (orchestrate the SDK)
     activate.ts       one-time PDA funding for bridge-out (SimpleActivator) + the check
+    new.ts            scaffold front door — wraps create-rome-app + chain pre-wiring
     doctor.ts         preflight checklist
     tx.ts             cross-VM diagnosis (rome_solanaTxForEvmTx; no debug_trace)
     verify.ts         the path-aware works-gate (+ probe.ts: bundled Store + CPI-Memo probes)
