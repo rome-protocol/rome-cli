@@ -19,7 +19,12 @@ export const CCTP_BURN_RESERVE = 15_000_000n;
 
 const CPI_PRECOMPILE = "0xff00000000000000000000000000000000000008" as const;
 const LAMPORTS_ABI = parseAbi(["function account_lamports(bytes32) view returns (uint64)"]);
-const ACTIVATOR_ABI = parseAbi(["function activate() payable", "function activationCost() view returns (uint256)"]);
+const ACTIVATOR_ABI = parseAbi([
+  "function activate() payable",
+  "function activationCost() view returns (uint256)",
+  "function USER_PDA_FUNDING() view returns (uint64)",
+  "function topUpUserPda(uint64 lamports) payable",
+]);
 
 export interface ActivationStatus {
   address: `0x${string}`;
@@ -53,6 +58,8 @@ export interface ActivateResult {
   address: `0x${string}`;
   pda: string;
   alreadyActivated: boolean;
+  /** true when a drained (activated-but-below-reserve) PDA was refilled via topUpUserPda. */
+  toppedUp?: boolean;
   lamports: string;
   txHash?: `0x${string}`;
   cost?: string;
@@ -63,16 +70,39 @@ export interface ActivateDeps {
   pda: string;
   readLamports(): Promise<bigint>;
   getActivationCost(): Promise<bigint>;
+  /** SimpleActivator.USER_PDA_FUNDING — the full lamport level activation establishes. */
+  getPdaFunding(): Promise<bigint>;
   activate(cost: bigint): Promise<{ hash: `0x${string}`; success: boolean }>;
+  /** SimpleActivator.topUpUserPda(lamports){value} — refill a drained PDA. */
+  topUp(lamports: bigint, value: bigint): Promise<{ hash: `0x${string}`; success: boolean }>;
 }
 
-/** Fund the actor's external-auth PDA once (idempotent — skips, no spend, if already activated). */
+/**
+ * Three states, one command:
+ *  - lamports >= reserve         → already activated; skip (no spend)
+ *  - lamports == 0               → never activated; SimpleActivator.activate{value: cost}
+ *  - 0 < lamports < reserve      → activated but DRAINED (each burn consumes rent);
+ *                                  activate() would revert AlreadyActivated — refill via
+ *                                  topUpUserPda back to the full funding level, priced at
+ *                                  the on-chain rate (activationCost / USER_PDA_FUNDING).
+ */
 export async function runActivate(deps: ActivateDeps): Promise<ActivateResult> {
   const before = await deps.readLamports();
   if (before >= CCTP_BURN_RESERVE) {
     return { address: deps.address, pda: deps.pda, alreadyActivated: true, lamports: before.toString() };
   }
   const cost = await deps.getActivationCost();
+
+  if (before > 0n) {
+    const funding = await deps.getPdaFunding();
+    const lamports = funding - before;
+    const value = (lamports * cost + funding - 1n) / funding; // ceil at the on-chain rate
+    const { hash, success } = await deps.topUp(lamports, value);
+    if (!success) throw new Error(`Top-up tx reverted (${hash}).`);
+    const after = await deps.readLamports();
+    return { address: deps.address, pda: deps.pda, alreadyActivated: false, toppedUp: true, txHash: hash, cost: value.toString(), lamports: after.toString() };
+  }
+
   const { hash, success } = await deps.activate(cost);
   if (!success) throw new Error(`Activation tx reverted (${hash}).`);
   const after = await deps.readLamports();
@@ -113,8 +143,18 @@ export function defaultActivateDeps(chain: string | number): ActivateDeps {
       const { data } = await pub.call({ to: activator, data: encodeFunctionData({ abi: ACTIVATOR_ABI, functionName: "activationCost" }) });
       return BigInt(data && data !== "0x" ? data : "0x0");
     },
+    async getPdaFunding() {
+      const { data } = await pub.call({ to: activator, data: encodeFunctionData({ abi: ACTIVATOR_ABI, functionName: "USER_PDA_FUNDING" }) });
+      return BigInt(data && data !== "0x" ? data : "0x0");
+    },
     async activate(cost) {
       const hash = await submitRomeTx(provider, { from: account.address, to: activator, data: encodeFunctionData({ abi: ACTIVATOR_ABI, functionName: "activate" }), value: cost });
+      const rcpt = await pub.waitForTransactionReceipt({ hash });
+      return { hash, success: rcpt.status === "success" };
+    },
+    async topUp(lamports, value) {
+      const data = encodeFunctionData({ abi: ACTIVATOR_ABI, functionName: "topUpUserPda", args: [lamports] });
+      const hash = await submitRomeTx(provider, { from: account.address, to: activator, data, value });
       const rcpt = await pub.waitForTransactionReceipt({ hash });
       return { hash, success: rcpt.status === "success" };
     },
