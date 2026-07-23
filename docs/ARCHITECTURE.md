@@ -71,8 +71,8 @@ Chains resolve by id, name, or slug (`200010`, `hadrian`, `Rome Hadrian`) — by
 | `deploy <chain> <artifact> [args]` | `ROME_EVM_KEY` | deploy a compiled artifact, handling Rome's gas quirks |
 | `send <chain> <addr> <sig> [args]` | `ROME_EVM_KEY` | write to a contract via `submitRomeTx` (the correct Rome write path) |
 | `fund <chain> --from <src> --amount <usdc>` | `ROME_EVM_KEY` | bridge USDC → Rome **gas** (CCTP); the "from home" on-ramp |
-| `bridge <chain> --from <src> --amount <usdc> [--intent gas\|wrapper]` | `ROME_EVM_KEY` | bridge USDC **in** as gas or wUSDC |
-| `bridge <chain> --to <dest> --amount <usdc> [--recipient 0x…]` | `ROME_EVM_KEY` | bridge wUSDC **out**: burn on Rome → claim handle for the destination (you claim there) |
+| `bridge <chain> --from <src> --amount <n> [--asset usdc\|eth] [--intent gas\|wrapper]` | `ROME_EVM_KEY` | bridge **in**: USDC (CCTP) as gas or wUSDC · ETH (Wormhole) as wETH |
+| `bridge <chain> --to <dest> --amount <n> [--asset usdc\|eth] [--recipient 0x…]` | `ROME_EVM_KEY` | bridge **out**: burn the wrapper on Rome → claim handle (you claim on the destination; ETH exits to Ethereum only) |
 | `activate <chain>` | `ROME_EVM_KEY` | one-time PDA funding required before the first bridge **out** (idempotent; inbound needs none) |
 | `new <app-name> [--chain <chain>]` | *none* (keyless) | scaffold a dual-lane app — wraps `create-rome-app`, pre-wires the chain from the registry into `.env`, prints the lifecycle next-steps (fund → deploy → demo → verify). CLI-only: MCP never writes to disk |
 | `verify <chain> [--path solidity]` | `ROME_EVM_KEY` + `ROME_SOLANA_KEY` | the **both-lane works-gate**: deploy a probe, drive it from the EVM lane *and* the Solana lane, assert parity |

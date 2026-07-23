@@ -13,7 +13,9 @@ function deps(over: Partial<ActivateDeps>): ActivateDeps {
     pda: "PdA1111111111111111111111111111111111111111",
     readLamports: vi.fn(async () => 0n),
     getActivationCost: vi.fn(async () => 2n * 10n ** 18n),
+    getPdaFunding: vi.fn(async () => 29_969_440n),
     activate: vi.fn(async () => ({ hash: "0xact" as `0x${string}`, success: true })),
+    topUp: vi.fn(async () => ({ hash: "0xtop" as `0x${string}`, success: true })),
     ...over,
   };
 }
@@ -44,6 +46,26 @@ describe("runActivate", () => {
     expect(r.alreadyActivated).toBe(true);
     expect(d.getActivationCost).not.toHaveBeenCalled();
     expect(d.activate).not.toHaveBeenCalled();
+    expect(d.topUp).not.toHaveBeenCalled();
+  });
+
+  it("DRAINED (0 < lamports < reserve): tops up via topUpUserPda, NEVER re-activate (it reverts AlreadyActivated)", async () => {
+    let reads = 0;
+    const d = deps({
+      readLamports: vi.fn(async () => (reads++ === 0 ? 14_500_000n : 44_000_000n)),
+    });
+    const r = await runActivate(d);
+    expect(d.activate).not.toHaveBeenCalled();
+    expect(d.topUp).toHaveBeenCalledTimes(1);
+    // tops back up to full funding: need = 29,969,440 - 14,500,000 lamports,
+    // priced at the on-chain rate (activationCost / pdaFunding), rounded up.
+    const [lamports, value] = (d.topUp as ReturnType<typeof vi.fn>).mock.calls[0] as [bigint, bigint];
+    expect(lamports).toBe(29_969_440n - 14_500_000n);
+    const expectedValue = (lamports * 2n * 10n ** 18n + 29_969_440n - 1n) / 29_969_440n;
+    expect(value).toBe(expectedValue);
+    expect(r.toppedUp).toBe(true);
+    expect(r.txHash).toBe("0xtop");
+    expect(r.lamports).toBe("44000000");
   });
 
   it("throws if the activation tx reverts", async () => {

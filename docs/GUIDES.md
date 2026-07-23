@@ -259,6 +259,14 @@ rome bridge hadrian --from base-sepolia --amount 0.5 --intent wrapper   # → wU
 
 Supported source chains come from the registry's bridge config for the target Rome chain — Base Sepolia, Arbitrum Sepolia, Polygon Amoy, Avalanche Fuji, Monad Testnet, Sepolia. Resolve a source by id, name, or slug (`84532`, `"base sepolia"`, `base-sepolia`). CCTP standard attestation takes ~15–20 min, so a real transfer isn't instant; the command polls until it lands.
 
+**Holding ETH instead?** Add `--asset eth` — it rides **Wormhole** and lands as **wETH** on Rome (never gas; gas is USDC, so `--intent` doesn't apply):
+
+```bash
+rome bridge hadrian --from sepolia --amount 0.002 --asset eth   # ETH → wETH on Rome (~15 min VAA)
+```
+
+You sign one wrap-and-transfer tx on the source; Rome's sponsor completes the transfer on the Solana side once the VAA is ready.
+
 > The bridge-api base defaults to the devnet orchestrator; override with `--bridge-api <url>` or `ROME_BRIDGE_API`.
 
 ---
@@ -300,6 +308,8 @@ $ rome bridge hadrian --to base-sepolia --amount 0.1
 ```
 
 Destinations are the same registry CCTP chains as sources (resolve by id / name / slug). `--recipient` sets the destination address (default = your address).
+
+**ETH out:** `--asset eth` burns your **wETH** on Rome (two txs: approve + burn) and exits via **Wormhole to Ethereum only** (`--to sepolia`; the CLI refuses any other destination). Same claims-are-yours rule — redeem the VAA on Ethereum when it's ready, and guard with `isTransferCompleted`: re-redeeming an already-completed VAA reverts with a misleading gas error. First outbound still needs `rome activate`.
 
 ### How the bridge actually works
 

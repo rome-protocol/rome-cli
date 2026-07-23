@@ -18,6 +18,8 @@ import { readActivation, notActivatedError } from "./activate.js";
 export interface BridgeSdk {
   inboundCctpQuoteRequest: typeof bridgeSdk.inboundCctpQuoteRequest;
   outboundCctpQuoteRequest: typeof bridgeSdk.outboundCctpQuoteRequest;
+  inboundWhQuoteRequest: typeof bridgeSdk.inboundWhQuoteRequest;
+  outboundWhQuoteRequest: typeof bridgeSdk.outboundWhQuoteRequest;
   userSignedTxs: typeof bridgeSdk.userSignedTxs;
   step1BindingTxIndex: typeof bridgeSdk.step1BindingTxIndex;
   settleTypedDataWithBurn: typeof bridgeSdk.settleTypedDataWithBurn;
@@ -147,6 +149,19 @@ export function usdcBaseUnits(human: string): bigint {
   return v;
 }
 
+// ── Assets: USDC rides CCTP; ETH rides Wormhole (in → wETH on Rome; out → Ethereum) ──
+export type BridgeAsset = "usdc" | "eth";
+const ASSET_DECIMALS: Record<BridgeAsset, number> = { usdc: 6, eth: 18 };
+
+/** Human amount → base units for the asset. Rejects unknown assets / non-positive. */
+export function assetBaseUnits(asset: BridgeAsset, human: string): bigint {
+  const dp = ASSET_DECIMALS[asset];
+  if (dp === undefined) throw new Error(`Unknown asset "${asset}" (supported: usdc, eth).`);
+  const v = parseUnits(String(human).trim() as `${number}`, dp);
+  if (v <= 0n) throw new Error(`Amount must be a positive ${asset.toUpperCase()} value (got "${human}").`);
+  return v;
+}
+
 // ── The inbound flow engine ─────────────────────────────────────────────────
 
 export type InboundIntent = "gas" | "wrapper";
@@ -158,6 +173,8 @@ export interface InboundUsdcParams {
   amountBaseUnits: bigint;
   address: `0x${string}`;
   intent: InboundIntent;
+  /** usdc (default, CCTP) | eth (Wormhole → wETH on Rome; no intent, no settle). */
+  asset?: BridgeAsset;
   dryRun?: boolean;
   pollMax?: number;
   pollIntervalMs?: number;
@@ -189,14 +206,23 @@ export async function runInboundUsdc(p: InboundUsdcParams): Promise<InboundResul
   const { sdk } = p.deps;
   const opts = { base: p.base };
 
-  // 1. build the request (gas builder; override intent for wrapper) → quote
-  const req = sdk.inboundCctpQuoteRequest({
-    sourceChainId: p.source.chainId,
-    romeChainId: p.romeChainId,
-    amount: p.amountBaseUnits,
-    evmAddress: p.address,
-  });
-  if (p.intent === "wrapper") req.intent = "wrapper";
+  // 1. build the request → quote. USDC rides CCTP (gas builder; wrapper overrides the
+  // intent); ETH rides Wormhole (no intent — it always lands as wETH, never gas).
+  const req =
+    (p.asset ?? "usdc") === "eth"
+      ? sdk.inboundWhQuoteRequest({
+          sourceChainId: p.source.chainId,
+          romeChainId: p.romeChainId,
+          amount: p.amountBaseUnits,
+          evmAddress: p.address,
+        })
+      : sdk.inboundCctpQuoteRequest({
+          sourceChainId: p.source.chainId,
+          romeChainId: p.romeChainId,
+          amount: p.amountBaseUnits,
+          evmAddress: p.address,
+        });
+  if ((p.asset ?? "usdc") === "usdc" && p.intent === "wrapper") req.intent = "wrapper";
   const quote = await sdk.requestQuote(req, opts);
 
   // guard: never sign a quote that isn't the inbound flow we asked for
@@ -279,6 +305,8 @@ export interface OutboundUsdcParams {
   amountBaseUnits: bigint;
   address: `0x${string}`;
   recipient?: `0x${string}`;
+  /** usdc (default, CCTP any catalog dest) | eth (Wormhole → Ethereum only). */
+  asset?: BridgeAsset;
   dryRun?: boolean;
   pollMax?: number;
   pollIntervalMs?: number;
@@ -315,19 +343,31 @@ export type OutboundResult =
       claim: OutboundClaimHandle;
     };
 
-const CLAIM_KIND = "cctp-claim-on-destination";
+// Both rails' destination step carries "claim" in its kind (cctp-claim-on-destination,
+// wormhole-claim-on-ethereum) — the user-owned leg is detected by that, rail-agnostic.
+const isClaimKind = (k: string | undefined) => Boolean(k && /claim/.test(k));
 
 export async function runOutboundUsdc(p: OutboundUsdcParams): Promise<OutboundResult> {
   const { sdk } = p.deps;
   const opts = { base: p.base };
 
-  const req = sdk.outboundCctpQuoteRequest({
-    destinationChainId: p.dest.chainId,
-    romeChainId: p.romeChainId,
-    amount: p.amountBaseUnits,
-    evmAddress: p.address,
-    recipient: p.recipient ?? p.address,
-  });
+  // USDC rides CCTP (per-call destination); ETH rides Wormhole (Ethereum only — the
+  // builder takes no destination).
+  const req =
+    (p.asset ?? "usdc") === "eth"
+      ? sdk.outboundWhQuoteRequest({
+          romeChainId: p.romeChainId,
+          amount: p.amountBaseUnits,
+          evmAddress: p.address,
+          recipient: p.recipient ?? p.address,
+        })
+      : sdk.outboundCctpQuoteRequest({
+          destinationChainId: p.dest.chainId,
+          romeChainId: p.romeChainId,
+          amount: p.amountBaseUnits,
+          evmAddress: p.address,
+          recipient: p.recipient ?? p.address,
+        });
   const quote = await sdk.requestQuote(req, opts);
 
   // guard: never sign a quote that isn't the outbound flow we asked for
@@ -361,9 +401,13 @@ export async function runOutboundUsdc(p: OutboundUsdcParams): Promise<OutboundRe
   // 3. poll until the destination claim is ready (Circle attestation) or terminal
   const final = await pollOutbound(sdk, record.id, record, opts, p.deps.sleep, p.pollMax ?? 40, p.pollIntervalMs ?? 3000);
 
-  const q2 = quote.steps.find((s) => s.kind === CLAIM_KIND) as Record<string, unknown> | undefined;
-  const claimStep = (final.steps as Array<{ kind?: string; status?: string }> | undefined)?.find((s) => s.kind === CLAIM_KIND);
+  const q2 = quote.steps.find((s) => isClaimKind(s.kind)) as Record<string, unknown> | undefined;
+  const claimStep = (final.steps as Array<{ kind?: string; status?: string }> | undefined)?.find((s) => isClaimKind(s.kind));
   const transmitter = q2?.claimTransmitter as string | undefined;
+  const eth = (p.asset ?? "usdc") === "eth";
+  const claimHow = eth
+    ? `When the Wormhole VAA is ready, redeem it on Ethereum (guard with isTransferCompleted — an already-redeemed VAA reverts with a misleading gas error)`
+    : `When Circle attestation is ready, call MessageTransmitterV2.receiveMessage(message, attestation)${transmitter ? ` on ${transmitter}` : ""}`;
   return {
     dryRun: false,
     transferId: record.id,
@@ -379,15 +423,14 @@ export async function runOutboundUsdc(p: OutboundUsdcParams): Promise<OutboundRe
       domain: q2?.claimDomain as number | undefined,
       note:
         `Claiming on ${p.dest.name} (chain ${p.dest.chainId}) is your step — Rome does not sponsor it. ` +
-        `When Circle attestation is ready, call MessageTransmitterV2.receiveMessage(message, attestation)` +
-        `${transmitter ? ` on ${transmitter}` : ""} (needs gas on ${p.dest.name}). ` +
+        `${claimHow} (needs gas on ${p.dest.name}). ` +
         `The bridge-api tracks this transfer at id=${record.id}. See docs/GUIDES.md "Bridge out".`,
     },
   };
 }
 
 function claimIsReady(rec: TransferRecord): boolean {
-  const step = (rec.steps as Array<{ kind?: string; status?: string }> | undefined)?.find((s) => s.kind === CLAIM_KIND);
+  const step = (rec.steps as Array<{ kind?: string; status?: string }> | undefined)?.find((s) => isClaimKind(s.kind));
   return step?.status === "ready";
 }
 
@@ -417,28 +460,34 @@ function requireArg(args: Record<string, string>, name: string): string {
   return v;
 }
 
-async function inboundHandler(args: Record<string, string>, intent: InboundIntent): Promise<InboundResult> {
+async function inboundHandler(args: Record<string, string>, intent: InboundIntent, asset: BridgeAsset): Promise<InboundResult> {
   const romeChainId = resolveChainId(args.chain);
   const source = resolveSourceChain(romeChainId, requireArg(args, "from"));
-  const amountBaseUnits = usdcBaseUnits(requireArg(args, "amount"));
+  const amountBaseUnits = assetBaseUnits(asset, requireArg(args, "amount"));
   const base = resolveBridgeBase(romeChainId, args["bridge-api"]);
   const dryRun = args["dry-run"] === "true";
   // Key FIRST (fail fast, no network): derive the actor address for the quote.
   const address = privateKeyToAccount(requireEvmKey()).address;
-  return runInboundUsdc({ romeChainId, base, source, amountBaseUnits, address, intent, dryRun, deps: defaultBridgeDeps() });
+  return runInboundUsdc({ romeChainId, base, source, amountBaseUnits, address, intent, asset, dryRun, deps: defaultBridgeDeps() });
 }
 
-/** `rome fund <chain> --from <source> --amount <usdc>` — USDC → Rome gas (CCTP). */
+/** `rome fund <chain> --from <source> --amount <usdc>` — USDC → Rome gas (CCTP).
+ *  Always USDC: `fund` is the gas on-ramp, and gas is USDC. */
 export function fundHandler(args: Record<string, string>): Promise<InboundResult> {
-  return inboundHandler(args, "gas");
+  return inboundHandler(args, "gas", "usdc");
 }
 
-/** `rome bridge <chain> --to <dest> --amount <usdc>` — burn wUSDC on Rome → USDC on the
- *  destination. Rome-side only; claiming on the destination is the user's responsibility. */
-async function outboundHandler(args: Record<string, string>): Promise<OutboundResult> {
+/** `rome bridge <chain> --to <dest> --amount <n>` — burn the wrapper on Rome → the asset
+ *  on the destination. Rome-side only; claiming on the destination is the user's step. */
+async function outboundHandler(args: Record<string, string>, asset: BridgeAsset): Promise<OutboundResult> {
   const romeChainId = resolveChainId(args.chain);
   const dest = resolveSourceChain(romeChainId, requireArg(args, "to"));
-  const amountBaseUnits = usdcBaseUnits(requireArg(args, "amount"));
+  // ETH exits via Wormhole to Ethereum ONLY (the route has no destination knob) —
+  // refuse a mismatched --to before any key/network work so funds can't aim wrong.
+  if (asset === "eth" && !/^(ethereum|sepolia)$/i.test(dest.name.trim())) {
+    throw new Error(`ETH bridges out via Wormhole to Ethereum only — use --to sepolia (got "${dest.name}").`);
+  }
+  const amountBaseUnits = assetBaseUnits(asset, requireArg(args, "amount"));
   const base = resolveBridgeBase(romeChainId, args["bridge-api"]);
   const dryRun = args["dry-run"] === "true";
   // Key FIRST (fail fast, no network): the burn signer + the actor address.
@@ -460,19 +509,28 @@ async function outboundHandler(args: Record<string, string>): Promise<OutboundRe
     if (!status.activated) throw notActivatedError(status, args.chain);
   }
 
-  return runOutboundUsdc({ romeChainId, base, romeRpcUrl, dest, amountBaseUnits, address: account.address, recipient, dryRun, deps: defaultBridgeDeps() });
+  return runOutboundUsdc({ romeChainId, base, romeRpcUrl, dest, amountBaseUnits, address: account.address, recipient, asset, dryRun, deps: defaultBridgeDeps() });
 }
 
 /** `rome bridge <chain> --from <src> …` (in: gas|wrapper) OR `--to <dest> …` (out). */
-export function bridgeHandler(args: Record<string, string>): Promise<InboundResult | OutboundResult> {
+// async so the synchronous asset/direction guards surface as rejections, not throws.
+export async function bridgeHandler(args: Record<string, string>): Promise<InboundResult | OutboundResult> {
   const hasFrom = Boolean(args.from);
   const hasTo = Boolean(args.to);
   if (hasFrom && hasTo) throw new Error(`Use --from (bridge in) OR --to (bridge out), not both.`);
   if (!hasFrom && !hasTo) throw new Error(`Bridge direction required: --from <src> (in) or --to <dest> (out).`);
-  if (hasTo) return outboundHandler(args);
+  // Asset guards fire BEFORE any key/network work.
+  const asset = (args.asset ?? "usdc").toLowerCase() as BridgeAsset;
+  if (asset !== "usdc" && asset !== "eth") {
+    throw new Error(`--asset must be "usdc" (default, CCTP) or "eth" (Wormhole) — got "${args.asset}".`);
+  }
+  if (asset === "eth" && args.intent) {
+    throw new Error(`--intent is USDC-only: gas is USDC, so ETH can't bridge in as gas — it lands as wETH. Drop --intent for --asset eth.`);
+  }
+  if (hasTo) return outboundHandler(args, asset);
   const intent = (args.intent ?? "gas").toLowerCase();
   if (intent !== "gas" && intent !== "wrapper") {
     throw new Error(`--intent must be "gas" or "wrapper" (got "${args.intent}").`);
   }
-  return inboundHandler(args, intent as InboundIntent);
+  return inboundHandler(args, intent as InboundIntent, asset);
 }
