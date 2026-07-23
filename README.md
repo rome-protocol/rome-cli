@@ -25,7 +25,7 @@ git clone https://github.com/rome-protocol/rome-cli
 cd rome-cli && npm install && npm install -g .
 ```
 
-Pin a tag (e.g. `github:rome-protocol/rome-cli#v0.8.0`) for reproducible runs.
+Pin a tag (e.g. `github:rome-protocol/rome-cli#v0.9.0`) for reproducible runs.
 
 ## CLI
 
