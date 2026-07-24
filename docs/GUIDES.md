@@ -152,9 +152,10 @@ $ rome preset foundry hadrian
 
 Give your coding agent grounded Rome facts so it stops guessing addresses and selectors.
 
-**1. Install** (repo-first; npm publish pending):
+**1. Install** (repo-first; npm publish pending) — clone + link. A plain `npm install -g github:…` fails: npm prepares this package's `github:` dependencies without their own `node_modules` ([#25](https://github.com/rome-protocol/rome-cli/issues/25)):
 ```bash
-npm install -g github:rome-protocol/rome-cli#v0.9.0
+git clone https://github.com/rome-protocol/rome-cli
+cd rome-cli && npm install && npm install -g .
 ```
 
 **2. Register the MCP server** in your client's config. You don't run or host anything — the client launches `rome mcp` on demand.
@@ -163,7 +164,10 @@ npm install -g github:rome-protocol/rome-cli#v0.9.0
 ```json
 { "mcpServers": { "rome": { "command": "rome", "args": ["mcp"] } } }
 ```
-*Claude Desktop / Cursor* — the same block in their MCP config.
+*Claude Desktop / Cursor* — the same block in their MCP config. Skipping the install? The npx form works too:
+```json
+{ "mcpServers": { "rome": { "command": "npx", "args": ["-y", "github:rome-protocol/rome-cli", "mcp"] } } }
+```
 
 **3. Verify** the tools are live:
 ```bash
