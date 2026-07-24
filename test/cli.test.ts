@@ -138,6 +138,37 @@ describe("CLI guardrails — extra positionals, per-command help, version", () =
     expect(c.out.join("\n")).toMatch(/rome facts chain <chain>/);
   });
 
+  it("prints group usage on `rome cookbook --help` and exits 0 (not 'Unknown command')", async () => {
+    const c = capture();
+    const code = await main(["node", "rome", "cookbook", "--help"]);
+    c.restore();
+    expect(code).toBe(0);
+    expect(c.err.join("\n")).not.toMatch(/unknown command/i);
+    const out = c.out.join("\n");
+    expect(out).toMatch(/rome cookbook cpi-recipe/);
+    expect(out).toMatch(/rome cookbook errors/);
+  });
+
+  it("treats a bare group (`rome facts`) as a help request, exit 0", async () => {
+    const c = capture();
+    const code = await main(["node", "rome", "facts"]);
+    c.restore();
+    expect(code).toBe(0);
+    expect(c.err.join("\n")).not.toMatch(/unknown command/i);
+    expect(c.out.join("\n")).toMatch(/rome facts chain <chain>/);
+  });
+
+  it("scopes the error help to the group on an unknown subcommand (`rome facts bogus`)", async () => {
+    const c = capture();
+    const code = await main(["node", "rome", "facts", "bogus"]);
+    c.restore();
+    expect(code).toBe(1);
+    const err = c.err.join("\n");
+    expect(err).toMatch(/unknown command: rome facts bogus/i);
+    expect(err).toMatch(/rome facts chain/);
+    expect(err).not.toMatch(/rome deploy/); // scoped to the group, not the full catalog
+  });
+
   it("--version prints the real package version, not a hardcoded string", async () => {
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
     const c = capture();
