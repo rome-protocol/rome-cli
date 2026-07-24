@@ -47,6 +47,16 @@ function capHelpText(cap: Capability): string {
   return lines.join("\n");
 }
 
+/** Group usage: `rome <group>` / `rome <group> --help` — that group's commands only. */
+function groupHelpText(group: string): string {
+  const lines = [`Usage: rome ${group} <command> [args]`, "", "Commands:"];
+  for (const c of CAPABILITIES.filter((x) => !x.verb && x.group === group)) {
+    const a = c.args.map((x) => (x.required ? `<${x.name}>` : `[${x.name}]`)).join(" ");
+    lines.push(`  rome ${c.cliPath}${a ? " " + a : ""}\n      ${c.summary}`);
+  }
+  return lines.join("\n");
+}
+
 function helpText(): string {
   const lines = [
     "rome — Rome Protocol dev CLI + MCP server",
@@ -86,6 +96,19 @@ export async function main(argv: string[]): Promise<number | void> {
 
   const resolved = resolveCli(args);
   if (!resolved) {
+    // A bare group or `<group> --help` is a help request; an unknown subcommand
+    // gets the error scoped to that group's commands, not the full catalog.
+    const isGroup = CAPABILITIES.some((c) => !c.verb && c.group === first);
+    if (isGroup) {
+      const second = args[1];
+      if (second === undefined || second === "--help" || second === "-h" || second === "help") {
+        console.log(groupHelpText(first));
+        return 0;
+      }
+      console.error(`Unknown command: rome ${args.slice(0, 2).join(" ")}`);
+      console.error("\n" + groupHelpText(first));
+      return 1;
+    }
     console.error(`Unknown command: rome ${args.slice(0, 2).join(" ")}`);
     console.error("\n" + helpText());
     return 1;
