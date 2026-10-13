@@ -140,10 +140,10 @@ const ERRORS: ErrorEntry[] = [
     tags: ["eth_getlogs", "getlogs", "-32005", "32005", "logs", "range", "query"],
   },
   {
-    symptom: "A Solana-lane (Phantom / DoTxUnsigned) action fails with Failure(Custom(1)).",
-    cause: "The Solana-lane sender lacks SOL for the on-chain step (the synthetic sender isn't funded with lamports).",
-    fix: "Fund the sender's SOL (swap gas to lamports) before the action; submitRomeTxSolanaLane handles the fund leg when wired.",
-    tags: ["solana-lane", "custom(1)", "phantom", "sol", "lamports", "sender", "dotxunsigned"],
+    symptom: "A Solana-lane action fails with Failure(Custom(1)) [System Program].",
+    cause: "The Solana wallet that signs (the fee payer) does not have enough SOL to cover rent for the accounts the call creates.",
+    fix: "Add SOL to the signing wallet and retry. fundSyntheticGas does not help here: it tops up the sender's native gas balance, which only a relayed call spends.",
+    tags: ["solana-lane", "custom(1)", "sol", "lamports", "sender", "rent", "system-program", "fee-payer"],
   },
   {
     symptom: "A Wormhole redeem reverts with 'gas limit too high'.",

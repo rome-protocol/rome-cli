@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   runVerifySolidity,
   runVerifySolanaProgram,
@@ -14,7 +15,7 @@ import { CAPABILITIES } from "../src/core/capabilities.js";
 import { buildMcpTools } from "../src/mcp.js";
 
 // `verify --path solidity` — the both-lane works-gate: deploy a probe, drive set/get
-// from the EVM lane (submitRomeTx) AND the Solana lane (submitRomeTxSolanaLane), assert
+// from the EVM lane (submitRomeTx) AND the Solana lane (submitRomeTxV1), assert
 // the SAME contract answers on each. A funded ACTION (both keys); CLI-only, never MCP.
 // These tests pin the orchestration + parity logic with mocked lane ops (no network).
 
@@ -222,5 +223,22 @@ describe("verify is a key-gated action, never on MCP", () => {
       else delete process.env.ROME_EVM_KEY;
       if (ps !== undefined) process.env.ROME_SOLANA_KEY = ps;
     }
+  });
+});
+
+describe("verify --path solidity Solana lane wiring", () => {
+  const src = readFileSync(new URL("../src/core/verify.ts", import.meta.url), "utf8");
+
+  it("drives the Solana lane through the v1 lane, provisioning the sender first", () => {
+    expect(src).toMatch(/import\s*\{[^}]*\bsubmitRomeTxV1\b[^}]*\}\s*from\s*"@rome-protocol\/sdk"/);
+    expect(src).toMatch(/import\s*\{[^}]*\bbuildCreatePdaCall\b[^}]*\}\s*from\s*"@rome-protocol\/sdk"/);
+  });
+
+  it("checks the receipt status, since a relayed call that reverts resolves", () => {
+    expect(src).toContain("receipt?.status");
+  });
+
+  it("no longer uses the legacy-transaction lane", () => {
+    expect(src).not.toContain("submitRomeTxSolanaLane");
   });
 });

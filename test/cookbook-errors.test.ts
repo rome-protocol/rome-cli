@@ -24,6 +24,16 @@ describe("cookbook errors — the Rome error taxonomy", () => {
     expect(getErrors("UnknownInstruction").some((e) => /instruction/i.test(e.symptom))).toBe(true);
   });
 
+  it("Custom(1) on the Solana lane points at SOL in the signing wallet, not fundSyntheticGas", () => {
+    const e = getErrors("custom(1)").find((x) => /Solana-lane action/.test(x.symptom));
+    expect(e).toBeTruthy();
+    expect(e!.cause).toMatch(/signs|fee payer/i);
+    expect(e!.cause).toMatch(/rent/i);
+    expect(e!.fix).toMatch(/Add SOL to the signing wallet/);
+    expect(e!.fix).toMatch(/fundSyntheticGas does not help/);
+    expect(e!.symptom).not.toMatch(/DoTxUnsigned/);
+  });
+
   it("falls back to the full list on an unknown query (agent still sees everything)", () => {
     expect(getErrors("zzzz-nope").length).toBe(getErrors().length);
   });

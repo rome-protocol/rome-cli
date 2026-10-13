@@ -324,7 +324,7 @@ Destinations are the same registry CCTP chains as sources (resolve by id / name 
 
 ## Prove it works — `rome verify`
 
-The keystone: prove a contract actually works on Rome, driven from **both lanes**. `verify --path solidity` deploys a probe, sets a value from the EVM lane (`submitRomeTx`) *and* the Solana lane (`submitRomeTxSolanaLane`), and asserts the same contract answered on each — the litmus test, runnable.
+The keystone: prove a contract actually works on Rome, driven from **both lanes**. `verify --path solidity` deploys a probe, sets a value from the EVM lane (`submitRomeTx`) *and* the Solana lane (`submitRomeTxV1`, one Solana v1 transaction per call), and asserts the same contract answered on each — the litmus test, runnable.
 
 A funded **action**: needs `ROME_EVM_KEY` + `ROME_SOLANA_KEY` (env-only), CLI-only, never on MCP.
 

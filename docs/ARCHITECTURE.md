@@ -79,7 +79,7 @@ Chains resolve by id, name, or slug (`200010`, `hadrian`, `Rome Hadrian`) — by
 | `verify <chain> --path solana-program` | `ROME_EVM_KEY` | the **cross-VM works-gate**: deploy a thin CPI wrapper; an EVM-lane call drives a Solana program (SPL Memo) via CPI. `--solana-rpc` adds the Solana-log deep check |
 | `verify <chain> --path from-home --from <src> --amount <usdc>` | `ROME_EVM_KEY` | the **round-trip works-gate**: bridge in (wrapper) → act on Rome → bridge out to claim-ready. Waits on Circle attestation (~20 min); needs an activated account |
 
-`fund`/`bridge` orchestrate `@rome-protocol/sdk/bridge` (quote → sign the source burn → settle → register → poll); `verify --path solidity` orchestrates `submitRomeTx` (EVM lane) + `submitRomeTxSolanaLane` (Solana lane); `verify --path solana-program` orchestrates `submitRomeTx` into a wrapper that CPIs a Solana program via the CPI precompile (`0xff…08`). Every action prints what it did; `fund`/`bridge` preview with `--dry-run`.
+`fund`/`bridge` orchestrate `@rome-protocol/sdk/bridge` (quote → sign the source burn → settle → register → poll); `verify --path solidity` orchestrates `submitRomeTx` (EVM lane) + `submitRomeTxV1` (Solana lane, one Solana v1 transaction per call); `verify --path solana-program` orchestrates `submitRomeTx` into a wrapper that CPIs a Solana program via the CPI precompile (`0xff…08`). Every action prints what it did; `fund`/`bridge` preview with `--dry-run`.
 
 ## Grounding — why the facts are trustworthy
 
