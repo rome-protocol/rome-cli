@@ -1,7 +1,7 @@
 import { createPublicClient, createWalletClient, http, encodeFunctionData } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { Connection, type Transaction } from "@solana/web3.js";
-import { submitRomeTx, submitRomeTxSolanaLane } from "@rome-protocol/sdk";
+import { Connection } from "@solana/web3.js";
+import { submitRomeTx, submitRomeTxV1, buildCreatePdaCall, isSyntheticProvisioned, syntheticAddress } from "@rome-protocol/sdk";
 import { getTokens } from "@rome-protocol/registry";
 import { getChainFacts } from "./facts.js";
 import { requireEvmKey, requireSolanaKey } from "./keys.js";
@@ -12,7 +12,7 @@ import { readActivation, notActivatedError } from "./activate.js";
 
 // `rome verify --path solidity` — the both-lane works-gate. Deploy a probe, then prove
 // the SAME contract answers when set from the EVM lane (submitRomeTx) AND the Solana lane
-// (submitRomeTxSolanaLane). A funded ACTION (needs an EVM key + a Solana key); CLI-only,
+// (submitRomeTxV1, one Solana v1 transaction per call). A funded ACTION (needs an EVM key + a Solana key); CLI-only,
 // never MCP. The lane ops are injectable so the orchestration is unit-testable.
 
 export interface VerifyCheck {
@@ -54,7 +54,7 @@ export async function runVerifySolidity(deps: VerifyDeps): Promise<VerifyResult>
   return { path: "solidity", probe, checks, ok: checks.every((c) => c.ok) };
 }
 
-/** Real lane ops: viem deploy + submitRomeTx (EVM lane) + submitRomeTxSolanaLane (Solana lane). */
+/** Real lane ops: viem deploy + submitRomeTx (EVM lane) + submitRomeTxV1 (Solana lane). */
 export function defaultVerifyDeps(chain: string | number): VerifyDeps {
   const c = getChainFacts(chain);
   const account = privateKeyToAccount(requireEvmKey()); // fail fast — no network
@@ -86,20 +86,24 @@ export function defaultVerifyDeps(chain: string | number): VerifyDeps {
       await pub.waitForTransactionReceipt({ hash });
     },
     async solanaLaneSet(probe, value) {
-      await submitRomeTxSolanaLane(
-        {
-          connection,
-          proxyUrl: c.rpcUrl,
-          programId: c.romeEvmProgramId,
-          chainId: c.chainId,
-          payer: solKeypair.publicKey,
-          signTransaction: async (tx: Transaction) => {
-            tx.partialSign(solKeypair);
-            return tx;
-          },
-        },
-        { to: probe, data: setData(value), autoProvision: true },
-      );
+      const deps = {
+        connection,
+        proxyUrl: c.rpcUrl,
+        chainId: c.chainId,
+        programId: c.romeEvmProgramId,
+        signer: solKeypair,
+      };
+      // The v1 lane does not provision the sender on its own: create its account first.
+      const synthetic = syntheticAddress(solKeypair.publicKey);
+      if (!(await isSyntheticProvisioned(connection, c.romeEvmProgramId, synthetic))) {
+        const created = await submitRomeTxV1(deps, buildCreatePdaCall(synthetic));
+        if (created.receipt?.status !== "0x1") throw new Error(`creating the Solana sender's account failed (tx ${created.hash}).`);
+      }
+      const r = await submitRomeTxV1(deps, { to: probe, data: setData(value) });
+      // A relayed call that reverts resolves rather than throws.
+      if (r.receipt?.status !== "0x1") {
+        throw new Error(`the Solana-lane call did not succeed (tx ${r.hash}, status ${r.receipt?.status ?? "no receipt in time"}).`);
+      }
     },
     async read(probe) {
       const data = encodeFunctionData({ abi: STORE_PROBE.abi, functionName: "get" });

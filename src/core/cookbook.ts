@@ -142,7 +142,7 @@ const ERRORS: ErrorEntry[] = [
   {
     symptom: "A Solana-lane (Phantom / DoTxUnsigned) action fails with Failure(Custom(1)).",
     cause: "The Solana-lane sender lacks SOL for the on-chain step (the synthetic sender isn't funded with lamports).",
-    fix: "Fund the sender's SOL (swap gas to lamports) before the action; submitRomeTxSolanaLane handles the fund leg when wired.",
+    fix: "Top up the sender's native gas balance with fundSyntheticGas (it draws from the wallet's gas-token account) before a relayed call; the SOL in the wallet pays the Solana fee.",
     tags: ["solana-lane", "custom(1)", "phantom", "sol", "lamports", "sender", "dotxunsigned"],
   },
   {
