@@ -1,29 +1,30 @@
 <!--
-CANONICAL AGENTS.md (v3.3). Ships in every public Rome repo + the create-rome-app
+CANONICAL AGENTS.md (v3.4). Ships in every public Rome repo + the create-rome-app
 scaffold. Public-safe: no internal hostnames, infra/platform names, or internal
 repo paths. v3.2: the `rome` CLI + MCP server shipped (rome-protocol/rome-cli) —
 tooling references are now real commands, not futures. v3.3: the Solana lane is
 the SDK's v1 lane (submitRomeTxV1, one Solana v1 transaction per call); new rule:
 grant each SPL wrapper once per wallet; lookup-table advice dropped (Rome sends v1
-transactions). Organized by where the builder starts — the depth lives in the docs
-+ the example repos it points to.
+transactions). v3.4: the Solana lane's example wallet is Solflare (Phantom does not
+sign Solana v1 transactions on devnet yet). Organized by where the builder starts —
+the depth lives in the docs + the example repos it points to.
 Keep it short; an agent reads it before writing a line.
 -->
 # AGENTS.md — building on Rome with an AI coding agent
 
-**Rome is EVM chains that run natively inside the Solana runtime.** Your Solidity/EVM app executes inside a Solana program and can call Solana programs atomically (CPI). Two lanes reach the same chain and the same state: MetaMask/EVM tooling, and Phantom/Solana.
+**Rome is EVM chains that run natively inside the Solana runtime.** Your Solidity/EVM app executes inside a Solana program and can call Solana programs atomically (CPI). Two lanes reach the same chain and the same state: MetaMask/EVM tooling, and a Solana wallet (Solflare, for example).
 
 This file gives you the facts, organized by **what you're starting from**. Find your starting point, apply the rules that bite on every path, and read the example repo closest to what you're building. Vanilla-EVM habits produce plausible-but-wrong code here — reads (`eth_call`, balances, logs) are standard; the differences are in writes, gas, tooling, CPI, and architecture.
 
 ## First, the mental model — three facts everything rests on
 - **EVM inside Solana.** Your Solidity runs inside a Solana program; from Solidity you can invoke *any* Solana program (SPL Token, Meteora, a program you wrote) atomically, in one transaction, via the CPI precompile.
-- **One state, two lanes.** MetaMask (an EVM key) and Phantom (a Solana key) drive the **same** contracts and the **same** state. A Phantom user signs with their **Solana** key — no EVM keypair, no separate address. An EVM user's on-chain identity is a Rome-derived PDA (`external_auth`).
+- **One state, two lanes.** MetaMask (an EVM key) and a Solana wallet such as Solflare (a Solana key) drive the **same** contracts and the **same** state. A Solana user signs with their **Solana** key — no EVM keypair; Rome derives their EVM address (a synthetic address) from that key. An EVM user's on-chain identity is a Rome-derived PDA (`external_auth`).
 - **SPL *is* ERC-20, automatically.** Any SPL token is already an ERC-20 on Rome — the **same account**, no bridge and no wrapped-asset hop. An LP or position token minted as an SPL mint is spendable as an ERC-20 too, and vice-versa, once the wallet has granted the token's wrapper (rule 4).
 
 ## Find your starting point
 
 ### You have Solidity — a contract, or an EVM app to fork
-Deploy it as it is, with standard Hardhat or Foundry (one caveat: `forge script` needs `--skip-simulation`; `forge create`, `cast`, and Hardhat work normally). The same contract serves EVM (MetaMask) and Solana (Phantom) users — you don't write per-audience code, and nothing about your Solidity changes. When you want Solana liquidity or data, call a Solana program via CPI (see the rules below).
+Deploy it as it is, with standard Hardhat or Foundry (one caveat: `forge script` needs `--skip-simulation`; `forge create`, `cast`, and Hardhat work normally). The same contract serves EVM users (MetaMask) and Solana users (Solflare, for example) — you don't write per-audience code, and nothing about your Solidity changes. When you want Solana liquidity or data, call a Solana program via CPI (see the rules below).
 **Read:** [compound-on-rome-comet](https://github.com/rome-protocol/compound-on-rome-comet) and [rome-aave-v3](https://github.com/rome-protocol/rome-aave-v3) — Compound v3 and Aave v3 running unchanged.
 
 ### You have a Solana program
@@ -31,7 +32,7 @@ It keeps doing what it already does for your Solana users — no changes. To ope
 **Read:** [cardo](https://github.com/rome-protocol/cardo) — drives Jupiter, Meteora, Marinade, and Mango from an EVM account.
 
 ### You have one lane and want to open the other — the Parity Pattern
-Keep **one** source of truth, written authority-agnostic, and open the other lane to it. This comes in **both** shapes (see *Which side is your core?* below): a **native Solana program + thin EVM router**, or a **Solidity core that Solana users reach via a synthetic sender**. Either way a Phantom user and a MetaMask user act on the **same reserves/state** — Rome auto-signs the EVM user's PDA. Because the LP/position token is an SPL mint, it's automatically an ERC-20, so a position opened on one lane is spendable on the other. Keep the account set lean so each call fits one Solana v1 transaction (up to 64 accounts and 4 KB), and test both lanes.
+Keep **one** source of truth, written authority-agnostic, and open the other lane to it. This comes in **both** shapes (see *Which side is your core?* below): a **native Solana program + thin EVM router**, or a **Solidity core that Solana users reach via a synthetic sender**. Either way a Solana wallet user and a MetaMask user act on the **same reserves/state** — Rome auto-signs the EVM user's PDA. Because the LP/position token is an SPL mint, it's automatically an ERC-20, so a position opened on one lane is spendable on the other. Keep the account set lean so each call fits one Solana v1 transaction (up to 64 accounts and 4 KB), and test both lanes.
 **Read:** [rome-dex](https://github.com/rome-protocol/rome-dex) (AMM — native core + router) and [aerarium](https://github.com/rome-protocol/aerarium) (lending — Solidity core + synthetic sender).
 
 ### You're building greenfield — bring your idea
@@ -44,7 +45,7 @@ Your users don't move — from their home chain (an L2, Solana, …) they reach 
 
 ## Which side is your core?
 Which side holds the core logic is a **soft, per-app judgment** — weigh existing code/assets, team expertise, security posture, tooling, performance, and how each audience uses it. There's no hard rule.
-- **(a) Solidity core; Solana users arrive via a synthetic sender.** Often fits a Solidity contract you already have (especially hardened/audited), standard EVM tooling, or straightforward logic. A Phantom user's Solana signature runs as an EVM tx from their Rome-derived PDA — no EVM key. *Example: [aerarium](https://github.com/rome-protocol/aerarium).*
+- **(a) Solidity core; Solana users arrive via a synthetic sender.** Often fits a Solidity contract you already have (especially hardened/audited), standard EVM tooling, or straightforward logic. A Solana user's signature runs as an EVM tx from their Rome-derived synthetic address — no EVM key. *Example: [aerarium](https://github.com/rome-protocol/aerarium).*
 - **(b) Native Solana program core; EVM users arrive via a thin CPI router.** Often fits an existing Solana program, or when running the core natively matters. *Example: [rome-dex](https://github.com/rome-protocol/rome-dex).*
 
 For example, performance might tip it: native can be much cheaper than the EVM interpreter for heavy logic (one swap we measured ran ~6× cheaper) — consider it if you have a hot compute-heavy path. It's one input, not a rule.
@@ -59,7 +60,7 @@ Every Rome chain's gas token is **USDC** (Circle). **There is no Rome faucet.** 
 3. **Calling Solana from Solidity (CPI — the differentiator).** Precompiles: **CPI `0xFF…08`**, **Helper `0xFF…09`**, **Withdraw `0x42…16`**. The account rules agents get wrong: the accounts array must be **non-empty**; the **operator and the program_id must NOT** appear in it; to sign as your contract use `HELPER.pda(address(this))` as the signer (the precompile signs as `msg.sender`, so a router contract cannot sign a *user's* PDA). Full ABI + per-selector billing: the precompile reference (docs).
 4. **Grant each SPL wrapper once per wallet.** An ERC-20 wrapper over an SPL mint (`wUSDC`, `wETH`, …) moves a user's tokens as the SPL delegate of their token account. When the wrapper's `isEnabled(user)` returns false, the wallet — a MetaMask address, or a Solana user's synthetic address (provisioned first, see the SDK section) — sends `approve_spl(wrapper, 2^64-1, mint)` straight to the Helper precompile, where the mint is the wrapper's `mint_id()`. Without it every `transfer` or `transferFrom` out of that wallet reverts with SPL error `0x4`.
 5. **Never hardcode addresses — read the registry.** Chain ids, RPC URLs, contract addresses, token mints, and Solana program ids all come from **`@rome-protocol/registry`** (or the `rome` CLI/MCP `facts_chain`/`facts_tokens`/`facts_contracts` tools). Hardcoded values drift and break across deploys.
-6. **Test both lanes with a fresh wallet.** A feature must work on the EVM lane (MetaMask) *and* the Solana lane (Phantom). Verify each with a brand-new wallet and a tiny amount before claiming done.
+6. **Test both lanes with a fresh wallet.** A feature must work on the EVM lane (MetaMask) *and* the Solana lane (Solflare, for example). Verify each with a brand-new wallet and a tiny amount before claiming done. The Solana lane needs a wallet that signs Solana v1 transactions: on devnet, Solflare does and Phantom does not yet.
 7. **When a tx fails, use the taxonomy + the cross-VM map.** Rome surfaces specific failures (rent-starved pool payer or StateHolder, emulation-vs-simulation mismatches, nonce races). Match them against the taxonomy: `rome cookbook errors <query>`. To see the Solana settlement of a Rome tx, map it with `rome tx <chain> <hash>` (raw RPC: `rome_solanaTxForEvmTx`).
 
 ## The SDK — `@rome-protocol/sdk`
