@@ -97,7 +97,11 @@ export function defaultVerifyDeps(chain: string | number): VerifyDeps {
       const synthetic = syntheticAddress(solKeypair.publicKey);
       if (!(await isSyntheticProvisioned(connection, c.romeEvmProgramId, synthetic))) {
         const created = await submitRomeTxV1(deps, buildCreatePdaCall(synthetic));
-        if (created.receipt?.status !== "0x1") throw new Error(`creating the Solana sender's account failed (tx ${created.hash}).`);
+        if (created.receipt?.status !== "0x1") {
+          throw new Error(
+            `creating the Solana sender's account failed (tx ${created.hash}, status ${created.receipt?.status ?? "no receipt in time"}).`,
+          );
+        }
       }
       const r = await submitRomeTxV1(deps, { to: probe, data: setData(value) });
       // A relayed call that reverts resolves rather than throws.
