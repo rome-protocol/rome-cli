@@ -1,5 +1,5 @@
 <!--
-CANONICAL AGENTS.md (v3.5). Ships in every public Rome repo + the create-rome-app
+CANONICAL AGENTS.md (v3.6). Ships in every public Rome repo + the create-rome-app
 scaffold. Public-safe: no internal hostnames, infra/platform names, or internal
 repo paths. v3.2: the `rome` CLI + MCP server shipped (rome-protocol/rome-cli) —
 tooling references are now real commands, not futures. v3.3: the Solana lane is
@@ -7,7 +7,8 @@ the SDK's v1 lane (submitRomeTxV1, one Solana v1 transaction per call); new rule
 grant each SPL wrapper once per wallet; lookup-table advice dropped (Rome sends v1
 transactions). v3.4: the Solana lane's example wallet is Solflare (Phantom does not
 sign Solana v1 transactions on devnet yet). v3.5: gas rule from measurements; who
-signs in the parity pattern; a CLI install that works. Organized by where the builder starts —
+signs in the parity pattern; a CLI install that works. v3.6: Hadrian is
+Rome's public testnet (the only test chain the docs target). Organized by where the builder starts —
 the depth lives in the docs + the example repos it points to.
 Keep it short; an agent reads it before writing a line.
 -->
@@ -52,7 +53,7 @@ Which side holds the core logic is a **soft, per-app judgment** — weigh existi
 For example, performance might tip it: native can be much cheaper than the EVM interpreter for heavy logic (one swap we measured ran ~6× cheaper) — consider it if you have a hot compute-heavy path. It's one input, not a rule.
 
 ## Getting funded — USDC is the gas token; bridge it in
-Every Rome chain's gas token is **USDC** (Circle). **There is no Rome faucet.** Fund a wallet by **bridging USDC into Rome** from a chain where you already have it: get testnet USDC on a source chain (Sepolia, an L2, or Solana) from *that chain's* own faucet, then bridge to Hadrian/Martius (the on-chain `settle_inbound_bridge`, orchestrated by `rome-bridge-api`; CCTP for USDC). One command: `rome fund <chain> --from sepolia --amount 1`. Holding ETH instead? `rome bridge <chain> --from sepolia --amount 0.002 --asset eth` lands it as wETH (Wormhole). Bridging **out** (`--to`) is also one command — note the first outbound needs a one-time `rome activate <chain>` (~2 USDC), and the destination claim is your own step.
+Every Rome chain's gas token is **USDC** (Circle). **There is no Rome faucet.** Fund a wallet by **bridging USDC into Rome** from a chain where you already have it: get testnet USDC on a source chain (Sepolia, an L2, or Solana) from *that chain's* own faucet, then bridge to Hadrian, the testnet (the on-chain `settle_inbound_bridge`, orchestrated by `rome-bridge-api`; CCTP for USDC). One command: `rome fund <chain> --from sepolia --amount 1`. Holding ETH instead? `rome bridge <chain> --from sepolia --amount 0.002 --asset eth` lands it as wETH (Wormhole). Bridging **out** (`--to`) is also one command — note the first outbound needs a one-time `rome activate <chain>` (~2 USDC), and the destination claim is your own step.
 
 ## The rules that bite on every path (different from vanilla EVM)
 
@@ -71,4 +72,4 @@ The TypeScript SDK ([`rome-sdk-ts`](https://github.com/rome-protocol/rome-sdk-ts
 [`rome-cli`](https://github.com/rome-protocol/rome-cli) is the dev CLI + MCP server built for exactly this file's reader (one-shot: `npx github:rome-protocol/rome-cli#v0.11.0 <command>`; durable: clone the repo at a tag (`git clone --branch v0.11.0 https://github.com/rome-protocol/rome-cli`), then `npm install && npm install -g .` — a plain `npm i -g github:…` fails, and an unpinned `npx` can run an old cached copy). **Reads** run on both surfaces, no keys: `facts` (chain/tokens/contracts/gas/balance/programs) · `cookbook` (patterns / cpi-recipe / errors) · `call` · `doctor` · `tx` · `preset` (foundry/hardhat config). Register the MCP server once (after the durable install, so `rome` is on your PATH) — `{"mcpServers": {"rome": {"command": "rome", "args": ["mcp"]}}}` — and the tools are `facts_chain`, `facts_tokens`, `facts_contracts`, `cookbook_patterns`, `cookbook_errors`, `doctor`, `tx`, `preset`, …. **Actions** are CLI-only and key-gated (`ROME_EVM_KEY` from the environment, never a flag, never on MCP): `new` · `deploy` · `send` · `fund` · `bridge` · `activate` · `verify`. The MCP surface can never sign or move funds.
 
 ## Verify before you claim done
-Before saying a change works: check RPC config, confirm every write goes through the SDK (`submitRomeTx` / `submitRomeTxV1`), and run a **both-lane smoke** against devnet with a fresh wallet and a tiny amount. The one-command works-gate is **`rome verify <chain> --path <solidity|solana-program|from-home>`** — dual-lane parity for a contract, an EVM-lane call driving a Solana program via CPI, or the full bridge-in → act → bridge-out round trip. For a scaffolded app, `npm run demo` is the funded dual-lane proof.
+Before saying a change works: check RPC config, confirm every write goes through the SDK (`submitRomeTx` / `submitRomeTxV1`), and run a **both-lane smoke** against the Hadrian testnet with a fresh wallet and a tiny amount. The one-command works-gate is **`rome verify <chain> --path <solidity|solana-program|from-home>`** — dual-lane parity for a contract, an EVM-lane call driving a Solana program via CPI, or the full bridge-in → act → bridge-out round trip. For a scaffolded app, `npm run demo` is the funded dual-lane proof.
