@@ -20,7 +20,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@rome-protocol/registry": "github:rome-protocol/rome-registry#v0.2.0",
     "@rome-protocol/sdk": "github:rome-protocol/rome-sdk-ts#v0.3.0",
     "@solana/web3.js": "^1.98.0",
