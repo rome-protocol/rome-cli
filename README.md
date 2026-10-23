@@ -31,7 +31,7 @@ git clone https://github.com/rome-protocol/rome-cli
 cd rome-cli && npm install && npm install -g .
 ```
 
-Pin a tag (e.g. `npx github:rome-protocol/rome-cli#v0.11.0 facts chain hadrian`) for reproducible runs. An unpinned `npx github:rome-protocol/rome-cli` can keep running an older copy that npx cached earlier; a pinned tag always fetches that version.
+Pin a tag (e.g. `npx github:rome-protocol/rome-cli#v0.12.0 facts chain hadrian`) for reproducible runs. An unpinned `npx github:rome-protocol/rome-cli` can keep running an older copy that npx cached earlier; a pinned tag always fetches that version.
 
 ## CLI
 
