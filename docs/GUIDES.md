@@ -313,6 +313,14 @@ $ rome bridge hadrian --to base-sepolia --amount 0.1
 }
 ```
 
+### Claim a burn the bridge-api never registered
+
+If the burn went through but the CLI could not register it, the error names the burn tx hash. The burn is final, so the funds are safe. You can still claim by hand:
+
+1. Run `rome tx <chain> <burn tx hash>`. It returns the Solana settlement signature.
+2. Ask Circle's Iris v2 API for the message and attestation by that Solana signature: `GET https://iris-api-sandbox.circle.com/v2/messages/5?transactionHash=<signature>` (domain 5 is Solana; testnet chains use the sandbox host, mainnet uses `iris-api.circle.com`).
+3. Call `MessageTransmitterV2.receiveMessage(message, attestation)` on the destination chain, as in the section above.
+
 Destinations are the same registry CCTP chains as sources (resolve by id / name / slug). `--recipient` sets the destination address (default = your address).
 
 **ETH out:** not available on Hadrian. `RomeBridgeWithdraw` v13 removed `burnETH`, and the bridge-api refuses the quote (`rome.bridge.asset-not-supported`) before anything is signed. Only a v12 chain such as Martius still routes `--asset eth` out, through **Wormhole to Ethereum only** (`--to sepolia`) as two txs (approve + burn). Same claims-are-yours rule there: redeem the VAA on Ethereum when it's ready, and guard with `isTransferCompleted`: re-redeeming an already-completed VAA reverts with a misleading gas error.

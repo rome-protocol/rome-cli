@@ -250,6 +250,22 @@ describe("runInboundUsdc — the flow engine (gas intent)", () => {
     if (res.dryRun === false) expect(res.settleAuthorized).toBe(false);
   });
 
+  it("when registration fails after the source burn, the error names the burn tx hash and says not to bridge again", async () => {
+    const quote = cctpInQuote(true);
+    const sdk = mockSdk(quote, order);
+    (sdk.registerTransfer as unknown as { mockRejectedValueOnce: (e: Error) => void }).mockRejectedValueOnce(new Error("quote unknown or expired"));
+    await expect(
+      runInboundUsdc({
+        romeChainId: 200010,
+        base: "https://bridge-api.example",
+        source: SOURCE,
+        amountBaseUnits: 1_000_000n,
+        address: ADDR,
+        deps: makeDeps(sdk, mockSigner(order)),
+      }),
+    ).rejects.toThrow(/burn tx 0xhash1.*quote unknown or expired.*Do not run the bridge again/s);
+  });
+
   it("dry-run quotes + plans the source txs but signs/broadcasts/registers NOTHING", async () => {
     const quote = cctpInQuote(true);
     const sdk = mockSdk(quote, order);
@@ -415,7 +431,7 @@ describe("runOutboundUsdc — from-rome, user claims on destination", () => {
         address: ADDR,
         deps: makeDeps(sdk, mockSigner(order)),
       }),
-    ).rejects.toThrow(/0xhash0.*quote unknown or expired.*Do not run the bridge again/s);
+    ).rejects.toThrow(/burn tx 0xhash0.*quote unknown or expired.*Do not run the bridge again/s);
   });
 
   it("dry-run quotes + plans the burn but signs/registers NOTHING", async () => {

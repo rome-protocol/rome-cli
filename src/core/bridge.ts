@@ -291,7 +291,17 @@ export async function runInboundUsdc(p: InboundUsdcParams): Promise<InboundResul
   const userSettleSig = td ? await signer.signTypedData(td) : undefined;
 
   // 5. register, then poll to a terminal outcome
-  const record = await sdk.registerTransfer({ quote, step1TxHash, userSettleSig }, opts);
+  let record: TransferRecord;
+  try {
+    record = await sdk.registerTransfer({ quote, step1TxHash, userSettleSig }, opts);
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `The deposit went through on ${p.source.name} (burn tx ${step1TxHash}) but the bridge-api would not register the transfer: ${why}. ` +
+        `Your funds are not lost and the burn is final. Do not run the bridge again for this amount. ` +
+        `Keep the burn tx hash. The quote is only valid for 15 minutes, so ask the bridge-api operator to register this burn instead of running the bridge again.`,
+    );
+  }
   const final = await pollTransfer(sdk, record.id, record, opts, p.deps.sleep, p.pollMax ?? 40, p.pollIntervalMs ?? 3000);
 
   return {
@@ -436,9 +446,9 @@ export async function runOutboundUsdc(p: OutboundUsdcParams): Promise<OutboundRe
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     throw new Error(
-      `The burn went through on Rome (tx ${burnHashes.join(", ")}) but the bridge-api would not register the transfer: ${why}. ` +
+      `The burn went through on Rome (burn tx ${burnTxHash}) but the bridge-api would not register the transfer: ${why}. ` +
         `Your funds are not lost and the burn is final. Do not run the bridge again for this amount. ` +
-        `Keep the burn tx hash and claim on ${p.dest.name} by hand (see docs/GUIDES.md "Bridge out").`,
+        `Keep the burn tx hash and claim on ${p.dest.name} by hand (see docs/GUIDES.md "Claim a burn the bridge-api never registered").`,
     );
   }
 
