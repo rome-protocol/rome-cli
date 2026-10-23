@@ -285,9 +285,9 @@ The reverse of `fund` / `bridge --from`: you hold **wUSDC** on Rome and want USD
 
 ### Activation (`rome activate`) is no longer needed to bridge out
 
-Bridging out needs no setup. Since `RomeBridgeWithdraw` v12, the bridge contract pays for CCTP's per-burn `messageSentEventData` account itself. It calls `swap_gas_to_lamports` before the CPI, the transaction's Solana fee payer fronts the lamports, and you pay for them in gas. The bridge-api quote has no activation step, and `bridge --to` and `verify --path from-home` no longer check your external-auth PDA.
+With `RomeBridgeWithdraw` v12 or newer, you do not need to run `rome activate` before bridging out. You still need enough Rome gas to pay for the transaction. Since v12, the bridge contract pays for CCTP's per-burn `messageSentEventData` account itself. It calls `swap_gas_to_lamports` before the CPI, the transaction's Solana fee payer fronts the lamports, and you pay for them in gas. The bridge-api quote has no activation step, and `bridge --to` and `verify --path from-home` no longer check your external-auth PDA.
 
-`rome activate <chain>` still works. It funds your external-auth PDA once (~2 USDC, via the on-chain `SimpleActivator`) and it is idempotent: it skips with no spend if the PDA is already funded. Use it only on a chain whose `RomeBridgeWithdraw` is older than v12. Live `RomeBridgeWithdraw` is v13 on Hadrian and Rubicon and v12 on Martius. If a burn on an older contract reverts with `Custom(1)`, run `rome activate` and retry.
+`rome activate <chain>` still works. It funds an empty external-auth PDA (~2 USDC, via the on-chain `SimpleActivator`) or tops up one below the required reserve. It sends no transaction if the balance is already enough. You need it only on a chain whose `RomeBridgeWithdraw` is older than v12. Hadrian's live contract is v13 (read from the chain on 2026-10-23). `rome facts contracts <chain>` can lag the live deployment, so treat its version as a hint. If a burn on an older contract fails, check which account lacks lamports. Run `rome activate <chain>` only if it is your external-auth PDA.
 
 ```console
 $ rome activate hadrian

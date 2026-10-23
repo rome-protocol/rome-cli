@@ -237,7 +237,7 @@ export const CAPABILITIES: Capability[] = [
   verbAction(
     "activate",
     "activate",
-    "One-time funding of your external-auth PDA (~2 USDC; idempotent — skips if already funded). Bridging out no longer needs it on chains whose RomeBridgeWithdraw is v12 or newer; inbound never did. Needs ROME_EVM_KEY. e.g. rome activate hadrian",
+    "One-time funding of your external-auth PDA (~2 USDC; idempotent — skips if already funded). RomeBridgeWithdraw v12 and newer do not need it to bridge out; inbound never did. Needs ROME_EVM_KEY. e.g. rome activate hadrian",
     [chainArg],
     (a) => activateHandler(a),
   ),

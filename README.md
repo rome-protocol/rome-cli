@@ -58,7 +58,7 @@ rome fund   hadrian --from base-sepolia --amount 1  # bridge USDC → Rome gas (
 rome bridge hadrian --from base-sepolia --amount 1 --intent wrapper   # USDC in → wUSDC on Rome
 rome bridge hadrian --from sepolia --amount 0.002 --asset eth         # ETH in (Wormhole) → wETH on Rome
 rome bridge hadrian --to base-sepolia --amount 1    # bridge OUT: burn on Rome → you claim on the destination
-rome activate hadrian                               # optional: fund your external-auth PDA (not needed to bridge out on RomeBridgeWithdraw v12+)
+rome activate hadrian                               # optional: fund your external-auth PDA (bridge out does not need it on RomeBridgeWithdraw v12+)
 rome verify hadrian --path solidity                 # dual-lane works-gate (+ ROME_SOLANA_KEY)
 rome verify hadrian --path solana-program           # an EVM-lane call drives a Solana program via CPI
 rome verify hadrian --path from-home --from sepolia --amount 0.2   # bridge in → act → bridge out, proven
@@ -100,7 +100,7 @@ The client (Claude Code / Claude Desktop / Cursor / …) spawns `rome mcp` as a 
 ## What it is — two layers
 
 - **Grounding — read-only, on both CLI + MCP**: `facts` + `cookbook` + `call`. Kills hallucination, routes you to the right pattern, reads contracts. Holds no keys — safe to wire into any agent.
-- **Actions — CLI-only, never on MCP**: `new` (scaffold — keyless, wraps `create-rome-app`), `deploy` / `send` (contracts), `fund` / `bridge` (USDC via CCTP in as gas or wUSDC, ETH via Wormhole in as wETH; `--to` bridges out — you claim on the destination), `activate` (optional PDA funding; bridging out no longer needs it on chains whose RomeBridgeWithdraw is v12 or newer), and `verify` (the works-gate: dual-lane parity, EVM→CPI→Solana-program, or the from-home round trip). Signing actions read the key from the environment (`ROME_EVM_KEY`) — never a flag, never logged, never through the MCP server. Every action prints what it did; bridging previews with `--dry-run`.
+- **Actions — CLI-only, never on MCP**: `new` (scaffold — keyless, wraps `create-rome-app`), `deploy` / `send` (contracts), `fund` / `bridge` (USDC via CCTP in as gas or wUSDC, ETH via Wormhole in as wETH; `--to` bridges out — you claim on the destination), `activate` (optional PDA funding; `RomeBridgeWithdraw` v12 and newer do not need it to bridge out), and `verify` (the works-gate: dual-lane parity, EVM→CPI→Solana-program, or the from-home round trip). Signing actions read the key from the environment (`ROME_EVM_KEY`) — never a flag, never logged, never through the MCP server. Every action prints what it did; bridging previews with `--dry-run`.
 - Everything is sourced from [`@rome-protocol/registry`](https://github.com/rome-protocol/rome-registry) + the chain's RPC + the SDK's `@rome-protocol/sdk/bridge` — nothing chain-specific is hardcoded.
 - Still orchestrates, doesn't replace: heavy contract builds stay in Foundry / Hardhat; scaffolding is [`create-rome-app`](https://github.com/rome-protocol/create-rome-app); library writes use [`@rome-protocol/sdk`](https://github.com/rome-protocol/rome-sdk-ts).
 
