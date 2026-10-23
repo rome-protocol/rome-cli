@@ -5,7 +5,6 @@ import * as bridgeSdk from "@rome-protocol/sdk/bridge";
 import type { SettleTypedData, TransferRecord, UnsignedTx, FlowStatus } from "@rome-protocol/sdk/bridge";
 import { resolveChainId, getChainFacts } from "./facts.js";
 import { requireEvmKey } from "./keys.js";
-import { readActivation, notActivatedError } from "./activate.js";
 
 // ── Fund / bridge: the "from home" on-ramp ──────────────────────────────────
 // One rail-agnostic INBOUND flow engine that ORCHESTRATES @rome-protocol/sdk/bridge
@@ -496,18 +495,8 @@ async function outboundHandler(args: Record<string, string>, asset: BridgeAsset)
   const romeRpcUrl = facts.rpcUrl;
   const recipient = (args.recipient as `0x${string}` | undefined) ?? account.address;
 
-  // Outbound needs an activated account (a lamport-funded PDA) for the CCTP burn.
-  // Check first with a pure EVM read and point at `rome activate` — otherwise the burn
-  // reverts deep in CCTP (Custom(1)). Skip on dry-run (no burn). Inbound needs none.
-  if (!dryRun) {
-    const pub = createPublicClient({ transport: http(romeRpcUrl) });
-    const ethCall = async (to: string, data: `0x${string}`) => {
-      const { data: ret } = await pub.call({ to: to as `0x${string}`, data });
-      return (ret ?? "0x") as `0x${string}`;
-    };
-    const status = await readActivation(account.address, facts.romeEvmProgramId, ethCall);
-    if (!status.activated) throw notActivatedError(status, args.chain);
-  }
+  // No activation pre-check: RomeBridgeWithdraw (v12+) funds the CCTP message-account
+  // rent itself and the user pays in gas. Older bridge contracts are not supported here.
 
   return runOutboundUsdc({ romeChainId, base, romeRpcUrl, dest, amountBaseUnits, address: account.address, recipient, asset, dryRun, deps: defaultBridgeDeps() });
 }

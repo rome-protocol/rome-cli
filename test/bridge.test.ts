@@ -577,6 +577,27 @@ describe("bridgeHandler — asset guards (fire before key/network)", () => {
   });
 });
 
+describe("bridgeHandler --to needs no activation (RomeBridgeWithdraw v12+ funds the burn rent)", () => {
+  it("goes straight to the bridge-api quote; no PDA lamports read on the Rome RPC first", async () => {
+    const prev = process.env.ROME_EVM_KEY;
+    process.env.ROME_EVM_KEY = `0x${"11".repeat(32)}`;
+    const urls: string[] = [];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      urls.push(String(typeof input === "object" && "url" in input ? input.url : input));
+      throw new Error("network stubbed");
+    });
+    try {
+      await expect(bridgeHandler({ chain: "hadrian", to: "base sepolia", amount: "0.01", "bridge-api": "https://bridge.invalid" })).rejects.toThrow();
+      expect(urls.length).toBeGreaterThan(0);
+      expect(urls.every((u) => u.startsWith("https://bridge.invalid"))).toBe(true);
+    } finally {
+      fetchSpy.mockRestore();
+      if (prev !== undefined) process.env.ROME_EVM_KEY = prev;
+      else delete process.env.ROME_EVM_KEY;
+    }
+  });
+});
+
 describe("action key-gating (fund/bridge refuse without a key, before any network call)", () => {
   it("the fund capability handler throws /ROME_EVM_KEY/ when unset", async () => {
     const prev = process.env.ROME_EVM_KEY;

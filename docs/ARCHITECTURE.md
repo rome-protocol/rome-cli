@@ -73,11 +73,11 @@ Chains resolve by id, name, or slug (`200010`, `hadrian`, `Rome Hadrian`) — by
 | `fund <chain> --from <src> --amount <usdc>` | `ROME_EVM_KEY` | bridge USDC → Rome **gas** (CCTP); the "from home" on-ramp |
 | `bridge <chain> --from <src> --amount <n> [--asset usdc\|eth] [--intent gas\|wrapper]` | `ROME_EVM_KEY` | bridge **in**: USDC (CCTP) as gas or wUSDC · ETH (Wormhole) as wETH |
 | `bridge <chain> --to <dest> --amount <n> [--asset usdc\|eth] [--recipient 0x…]` | `ROME_EVM_KEY` | bridge **out**: burn the wrapper on Rome → claim handle (you claim on the destination; ETH exits to Ethereum only) |
-| `activate <chain>` | `ROME_EVM_KEY` | one-time PDA funding required before the first bridge **out** (idempotent; inbound needs none) |
+| `activate <chain>` | `ROME_EVM_KEY` | optional PDA funding (idempotent). Bridge **out** no longer needs it on chains whose `RomeBridgeWithdraw` is v12 or newer; inbound never did |
 | `new <app-name> [--chain <chain>]` | *none* (keyless) | scaffold a dual-lane app — wraps `create-rome-app`, pre-wires the chain from the registry into `.env`, prints the lifecycle next-steps (fund → deploy → demo → verify). CLI-only: MCP never writes to disk |
 | `verify <chain> [--path solidity]` | `ROME_EVM_KEY` + `ROME_SOLANA_KEY` | the **both-lane works-gate**: deploy a probe, drive it from the EVM lane *and* the Solana lane, assert parity |
 | `verify <chain> --path solana-program` | `ROME_EVM_KEY` | the **cross-VM works-gate**: deploy a thin CPI wrapper; an EVM-lane call drives a Solana program (SPL Memo) via CPI. `--solana-rpc` adds the Solana-log deep check |
-| `verify <chain> --path from-home --from <src> --amount <usdc>` | `ROME_EVM_KEY` | the **round-trip works-gate**: bridge in (wrapper) → act on Rome → bridge out to claim-ready. Waits on Circle attestation (~20 min); needs an activated account |
+| `verify <chain> --path from-home --from <src> --amount <usdc>` | `ROME_EVM_KEY` | the **round-trip works-gate**: bridge in (wrapper) → act on Rome → bridge out to claim-ready. Waits on Circle attestation (~20 min); needs no activation |
 
 `fund`/`bridge` orchestrate `@rome-protocol/sdk/bridge` (quote → sign the source burn → settle → register → poll); `verify --path solidity` orchestrates `submitRomeTx` (EVM lane) + `submitRomeTxV1` (Solana lane, one Solana v1 transaction per call); `verify --path solana-program` orchestrates `submitRomeTx` into a wrapper that CPIs a Solana program via the CPI precompile (`0xff…08`). Every action prints what it did; `fund`/`bridge` preview with `--dry-run`.
 
@@ -105,7 +105,7 @@ src/
     cookbook.ts       cpi-recipe + patterns + errors (the taxonomy) + curated index
     actions.ts        call (read) · deploy · send (viem + submitRomeTx)
     bridge.ts         fund · bridge in/out — the CCTP flow engines (orchestrate the SDK)
-    activate.ts       one-time PDA funding for bridge-out (SimpleActivator) + the check
+    activate.ts       optional PDA funding (SimpleActivator) + the lamports read; bridge-out no longer calls it
     new.ts            scaffold front door — wraps create-rome-app + chain pre-wiring
     doctor.ts         preflight checklist
     tx.ts             cross-VM diagnosis (rome_solanaTxForEvmTx; no debug_trace)

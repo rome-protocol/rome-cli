@@ -7,12 +7,12 @@ import { requireEvmKey } from "./keys.js";
 import { eip1193FromAccount } from "./eip1193.js";
 
 // ── Account activation ──────────────────────────────────────────────────────
-// Inbound bridging is frictionless — no per-user account needed. The FIRST time a
-// user bridges OUT, CCTP's `deposit_for_burn` creates a per-tx `messageSentEventData`
-// account funded by the user's external-auth PDA, which must therefore hold lamports.
-// `rome activate` funds that PDA once (via SimpleActivator); `bridge --to` checks it
-// and points here if it's missing. The check is a pure EVM read of the PDA's lamports
-// through the CpiProgram precompile (`account_lamports`) — no Solana RPC required.
+// `rome activate` funds the user's external-auth PDA once via SimpleActivator. Bridging
+// OUT no longer needs it: since RomeBridgeWithdraw v12 the bridge contract funds the CCTP
+// message-account rent itself and the user pays in gas, so `bridge --to` and
+// `verify --path from-home` do not check the PDA. The command stays for chains whose
+// bridge contract is older than v12. The status read is a pure EVM read of the PDA's
+// lamports through the CpiProgram precompile (`account_lamports`), no Solana RPC needed.
 
 /** SimpleActivator.CCTP_BURN_RESERVE — the lamports one outbound burn's event account needs. */
 export const CCTP_BURN_RESERVE = 15_000_000n;
@@ -43,15 +43,6 @@ export async function readActivation(address: `0x${string}`, programId: string, 
   const ret = await ethCall(CPI_PRECOMPILE, data);
   const lamports = BigInt(ret && ret !== "0x" ? ret : "0x0");
   return { address, pda: pdaKey.toBase58(), lamports, activated: lamports >= CCTP_BURN_RESERVE };
-}
-
-/** The clear error `bridge --to` throws when the actor's account isn't activated yet. */
-export function notActivatedError(status: ActivationStatus, chain: string | number): Error {
-  return new Error(
-    `Account not activated for outbound. Your external-auth PDA (${status.pda}) holds ${status.lamports} lamports — ` +
-      `outbound needs >= ${CCTP_BURN_RESERVE} to fund CCTP's per-burn event account. ` +
-      `Run \`rome activate ${chain}\` first (one-time, ~2 USDC). Inbound (\`--from\`) needs no activation.`,
-  );
 }
 
 export interface ActivateResult {

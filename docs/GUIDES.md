@@ -283,9 +283,11 @@ The reverse of `fund` / `bridge --from`: you hold **wUSDC** on Rome and want USD
 - **Rome side — orchestrated for you.** You sign one burn tx; the engine registers the transfer and polls until Circle attestation is ready. (Rome runs a sponsor for the *inbound* settle intent; outbound carries no settle.)
 - **Destination side — yours.** Rome does **not** sponsor the destination mint. You call `MessageTransmitterV2.receiveMessage(message, attestation)` on the destination — which needs gas **on that chain**. The command returns the transmitter, the CCTP domain, and the transfer id so you (or Circle's portal / the bridge-api) can complete it. Delivery is permissionless (`destinationCaller = 0`), so anyone can submit it.
 
-### First time out: activate once (`rome activate`)
+### Activation (`rome activate`) is no longer needed to bridge out
 
-Inbound is deliberately frictionless — no per-user account is needed. The **first time you bridge out**, CCTP's `deposit_for_burn` creates a per-burn `messageSentEventData` account funded by your **external-auth PDA**, so that PDA must hold lamports (~15M reserve per burn). `rome activate <chain>` funds it once (~2 USDC, via the on-chain `SimpleActivator`); it's **idempotent** — it skips with no spend if you're already activated. `bridge --to` checks this first (a pure EVM read of the PDA lamports via the `account_lamports` precompile) and points you here rather than letting the burn revert deep inside CCTP.
+Bridging out needs no setup. Since `RomeBridgeWithdraw` v12, the bridge contract pays for CCTP's per-burn `messageSentEventData` account itself. It calls `swap_gas_to_lamports` before the CPI, the transaction's Solana fee payer fronts the lamports, and you pay for them in gas. The bridge-api quote has no activation step, and `bridge --to` and `verify --path from-home` no longer check your external-auth PDA.
+
+`rome activate <chain>` still works. It funds your external-auth PDA once (~2 USDC, via the on-chain `SimpleActivator`) and it is idempotent: it skips with no spend if the PDA is already funded. Use it only on a chain whose `RomeBridgeWithdraw` is older than v12. Live `RomeBridgeWithdraw` is v13 on Hadrian and Rubicon and v12 on Martius. If a burn on an older contract reverts with `Custom(1)`, run `rome activate` and retry.
 
 ```console
 $ rome activate hadrian
@@ -313,13 +315,13 @@ $ rome bridge hadrian --to base-sepolia --amount 0.1
 
 Destinations are the same registry CCTP chains as sources (resolve by id / name / slug). `--recipient` sets the destination address (default = your address).
 
-**ETH out:** `--asset eth` burns your **wETH** on Rome (two txs: approve + burn) and exits via **Wormhole to Ethereum only** (`--to sepolia`; the CLI refuses any other destination). Same claims-are-yours rule — redeem the VAA on Ethereum when it's ready, and guard with `isTransferCompleted`: re-redeeming an already-completed VAA reverts with a misleading gas error. First outbound still needs `rome activate`.
+**ETH out:** `--asset eth` burns your **wETH** on Rome (two txs: approve + burn) and exits via **Wormhole to Ethereum only** (`--to sepolia`; the CLI refuses any other destination). Same claims-are-yours rule — redeem the VAA on Ethereum when it's ready, and guard with `isTransferCompleted`: re-redeeming an already-completed VAA reverts with a misleading gas error.
 
 ### How the bridge actually works
 
 - **The real bridge is on-chain.** `RomeBridgeWithdraw.burnUSDC` (egress) + Circle CCTP v2 do the work. The **bridge-api** ([`rome-protocol/rome-bridge-api`](https://github.com/rome-protocol/rome-bridge-api)) is an off-chain *orchestrator + tracker* — it quotes the route and follows the transfer; it **holds no funds and cannot move yours**.
-- **Inbound** (`--from`): burn on the source L2 → Circle attestation → Rome's sponsor settles on Rome. You sign only the source burn; no activation needed.
-- **Outbound** (`--to`): activate (first time) → burn wUSDC on Rome → Circle attestation → **you** claim on the destination. No settle authorization, no destination sponsor.
+- **Inbound** (`--from`): burn on the source L2 → Circle attestation → Rome's sponsor settles on Rome. You sign only the source burn.
+- **Outbound** (`--to`): burn wUSDC on Rome → Circle attestation → **you** claim on the destination. No settle authorization, no destination sponsor.
 - Base override for the orchestrator: `--bridge-api <url>` or `ROME_BRIDGE_API` (defaults to the devnet orchestrator).
 
 ## Prove it works — `rome verify`
@@ -378,7 +380,7 @@ $ rome verify hadrian --path from-home --from sepolia --amount 0.2
 }
 ```
 
-Three legs, in order, failing fast: **in** (CCTP wrapper intent — waits through Circle attestation, ~15–20 min, and asserts the wUSDC actually landed) → **act** (a real wUSDC transfer via `submitRomeTx` — the asset is usable on Rome) → **out** (`bridge --to` back to the source chain, asserted to attestation-ready + a claim handle). The destination claim is your step, as always. Prereqs (checked up front with clear errors): `ROME_EVM_KEY`; USDC + gas on the source chain; gas on Rome; **an activated account** (`rome activate` — the out-leg burns).
+Three legs, in order, failing fast: **in** (CCTP wrapper intent — waits through Circle attestation, ~15–20 min, and asserts the wUSDC actually landed) → **act** (a real wUSDC transfer via `submitRomeTx` — the asset is usable on Rome) → **out** (`bridge --to` back to the source chain, asserted to attestation-ready + a claim handle). The destination claim is your step, as always. Prereqs (checked up front with clear errors): `ROME_EVM_KEY`; USDC + gas on the source chain; gas on Rome. No activation is needed for the out-leg.
 
 ---
 
