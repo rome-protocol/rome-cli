@@ -280,14 +280,14 @@ You sign one wrap-and-transfer tx on the source; Rome's sponsor completes the tr
 The reverse of `fund` / `bridge --from`: you hold **wUSDC** on Rome and want USDC back on another chain. `bridge --to <dest>` burns your wUSDC on Rome via `RomeBridgeWithdraw` (CCTP v2) and hands you a **claim handle** for the destination. `--from` = in, `--to` = out (exactly one; `fund` is always in).
 
 **The responsibility splits by chain — this is the design, not a limitation:**
-- **Rome side — orchestrated for you.** You sign one burn tx; the engine registers the transfer and polls until Circle attestation is ready. (Rome runs a sponsor for the *inbound* settle intent; outbound carries no settle.)
+- **Rome side — orchestrated for you.** You sign two txs on Rome, an approve and then the burn; the engine registers the transfer and polls until Circle attestation is ready. (Rome runs a sponsor for the *inbound* settle intent; outbound carries no settle.)
 - **Destination side — yours.** Rome does **not** sponsor the destination mint. You call `MessageTransmitterV2.receiveMessage(message, attestation)` on the destination — which needs gas **on that chain**. The command returns the transmitter, the CCTP domain, and the transfer id so you (or Circle's portal / the bridge-api) can complete it. Delivery is permissionless (`destinationCaller = 0`), so anyone can submit it.
 
 ### Activation (`rome activate`) is no longer needed to bridge out
 
 With `RomeBridgeWithdraw` v12 or newer, you do not need to run `rome activate` before bridging out. You still need enough Rome gas to pay for the transaction. Since v12, the bridge contract pays for CCTP's per-burn `messageSentEventData` account itself. It calls `swap_gas_to_lamports` before the CPI, the transaction's Solana fee payer fronts the lamports, and you pay for them in gas. The bridge-api quote has no activation step, and `bridge --to` and `verify --path from-home` no longer check your external-auth PDA.
 
-`rome activate <chain>` still works. It funds an empty external-auth PDA (~2 USDC, via the on-chain `SimpleActivator`) or tops up one below the required reserve. It sends no transaction if the balance is already enough. You need it only on a chain whose `RomeBridgeWithdraw` is older than v12. Hadrian's live contract is v13 (read from the chain on 2026-10-23). `rome facts contracts <chain>` can lag the live deployment, so treat its version as a hint. If a burn on an older contract fails, check which account lacks lamports. Run `rome activate <chain>` only if it is your external-auth PDA.
+`rome activate <chain>` still works. It funds an empty external-auth PDA (~2 USDC, via the on-chain `SimpleActivator`) or tops up one below the required reserve. It sends no transaction if the balance is already enough. Every chain this CLI supports funds that rent itself: Hadrian runs v13 (read from the chain on 2026-10-23), and Martius runs v12 (its rent getters, `cctpMessageRentLamports()` and `wormholeMessageRentLamports()`, return non-zero). You need `rome activate` only on a chain whose `RomeBridgeWithdraw` is older than v12. `rome facts contracts <chain>` can lag the live deployment, so treat its version as a hint. If a burn on an older contract fails, check which account lacks lamports. Run `rome activate <chain>` only if it is your external-auth PDA.
 
 ```console
 $ rome activate hadrian
@@ -315,7 +315,7 @@ $ rome bridge hadrian --to base-sepolia --amount 0.1
 
 Destinations are the same registry CCTP chains as sources (resolve by id / name / slug). `--recipient` sets the destination address (default = your address).
 
-**ETH out:** `--asset eth` burns your **wETH** on Rome (two txs: approve + burn) and exits via **Wormhole to Ethereum only** (`--to sepolia`; the CLI refuses any other destination). Same claims-are-yours rule — redeem the VAA on Ethereum when it's ready, and guard with `isTransferCompleted`: re-redeeming an already-completed VAA reverts with a misleading gas error.
+**ETH out:** not available on Hadrian. `RomeBridgeWithdraw` v13 removed `burnETH`, and the bridge-api refuses the quote (`rome.bridge.asset-not-supported`) before anything is signed. Only a v12 chain such as Martius still routes `--asset eth` out, through **Wormhole to Ethereum only** (`--to sepolia`) as two txs (approve + burn). Same claims-are-yours rule there: redeem the VAA on Ethereum when it's ready, and guard with `isTransferCompleted`: re-redeeming an already-completed VAA reverts with a misleading gas error.
 
 ### How the bridge actually works
 

@@ -342,9 +342,6 @@ export async function verifyHandler(
   if (path === "from-home") {
     if (!args.from) throw new Error("from-home needs --from <source chain> (where your USDC starts).");
     if (!args.amount) throw new Error("from-home needs --amount <usdc> (small, e.g. 0.2).");
-    // Fail fast on a bad chain or a missing key, before any network work.
-    getChainFacts(args.chain);
-    requireEvmKey();
     return runVerifyFromHome(defaultVerifyFromHomeDeps(args.chain, { from: args.from, amount: args.amount, bridgeApi: args["bridge-api"] }));
   }
   throw new Error(`--path ${path} is not supported (available: solidity, solana-program, from-home).`);

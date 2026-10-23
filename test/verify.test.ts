@@ -186,6 +186,28 @@ describe("verifyHandler --path from-home arg contract", () => {
   });
 });
 
+describe("verifyHandler --path from-home needs no activation pre-check", () => {
+  it("makes no eth_call to the CPI precompile before the in-leg", async () => {
+    const pe = process.env.ROME_EVM_KEY;
+    process.env.ROME_EVM_KEY = `0x${"11".repeat(32)}`;
+    const seen: string[] = [];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(`${String(typeof input === "object" && "url" in input ? input.url : input)} ${String(init?.body ?? "")}`);
+      throw new Error("network stubbed");
+    });
+    try {
+      await expect(
+        verifyHandler({ chain: "hadrian", path: "from-home", from: "sepolia", amount: "0.2", "bridge-api": "https://bridge.invalid" }),
+      ).rejects.toThrow();
+      expect(seen.some((r) => r.toLowerCase().includes("ff00000000000000000000000000000000000008"))).toBe(false);
+    } finally {
+      fetchSpy.mockRestore();
+      if (pe !== undefined) process.env.ROME_EVM_KEY = pe;
+      else delete process.env.ROME_EVM_KEY;
+    }
+  });
+});
+
 describe("verify is a key-gated action, never on MCP", () => {
   it("registered as an action requiring a key, and absent from the MCP surface", () => {
     const cap = CAPABILITIES.find((c) => c.id === "verify.verify");

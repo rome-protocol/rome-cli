@@ -122,4 +122,4 @@ test/                 per-module unit tests + alignment + behavioral CLI (+ mcp-
 
 ## Roadmap
 
-Shipped: the full four-paths surface above — 13 reads + 7 actions (`new` · `deploy` · `send` · `fund` · `bridge` in/out for USDC-CCTP and ETH-Wormhole · `activate` · `verify` across solidity / solana-program / from-home), every action funded-verified on a live Rome chain. Deploy/build stays orchestrated (Foundry/Hardhat/create-rome-app) — `rome` is the connective tissue + the Rome-unique gaps, not a re-implementation of the EVM toolchain.
+Shipped: the full four-paths surface above — 13 reads + 7 actions (`new` · `deploy` · `send` · `fund` · `bridge` in for USDC-CCTP and ETH-Wormhole, out for USDC-CCTP (ETH-Wormhole out only on v12 chains such as Martius; Hadrian's v13 has no `burnETH`) · `activate` · `verify` across solidity / solana-program / from-home), every action funded-verified on a live Rome chain. Deploy/build stays orchestrated (Foundry/Hardhat/create-rome-app) — `rome` is the connective tissue + the Rome-unique gaps, not a re-implementation of the EVM toolchain.

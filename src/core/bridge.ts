@@ -43,10 +43,45 @@ export interface BridgeDeps {
   sleep: (ms: number) => Promise<void>;
 }
 
+/**
+ * Register a transfer the way the live bridge-api expects. Its /v1/quote answer carries a
+ * `quoteId`, and POST /v1/transfers takes `{quoteId, step1TxHash}`: it refuses a client-sent
+ * quote unless the deployment sets ALLOW_CLIENT_QUOTE (off by default). SDK v0.3.0 only sends
+ * the full quote, so this posts the quoteId itself. A quote with no quoteId goes through the SDK.
+ */
+export async function registerTransferByQuoteId(
+  p: Parameters<typeof bridgeSdk.registerTransfer>[0],
+  opts: Parameters<typeof bridgeSdk.registerTransfer>[1],
+): Promise<TransferRecord> {
+  const quoteId = (p.quote as { quoteId?: unknown }).quoteId;
+  if (typeof quoteId !== "string" || quoteId === "") return bridgeSdk.registerTransfer(p, opts);
+  const res = await fetch(`${opts.base}/v1/transfers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      quoteId,
+      step1TxHash: p.step1TxHash,
+      ...(p.userSettleSig !== undefined ? { userSettleSig: p.userSettleSig } : {}),
+    }),
+  });
+  if (res.ok) return (await res.json()) as TransferRecord;
+  type Problem = { code?: unknown; title?: unknown; detail?: unknown };
+  const problem: Problem | null = await res.json().then(
+    (j) => j as Problem,
+    () => null, // non-JSON failure body from a gateway or proxy
+  );
+  throw new bridgeSdk.BridgeApiError({
+    code: typeof problem?.code === "string" ? problem.code : "rome.bridge.http-error",
+    status: res.status,
+    ...(typeof problem?.title === "string" ? { title: problem.title } : {}),
+    ...(typeof problem?.detail === "string" ? { detail: problem.detail } : {}),
+  });
+}
+
 /** Real deps: the SDK + a viem signer built from ROME_EVM_KEY. */
 export function defaultBridgeDeps(): BridgeDeps {
   return {
-    sdk: bridgeSdk,
+    sdk: { ...bridgeSdk, registerTransfer: registerTransferByQuoteId },
     makeSigner: realSigner,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   };
@@ -395,7 +430,17 @@ export async function runOutboundUsdc(p: OutboundUsdcParams): Promise<OutboundRe
   const burnTxHash = burnHashes[sdk.step1BindingTxIndex(signed)];
 
   // 2. register (no settle authorization on outbound)
-  const record = await sdk.registerTransfer({ quote, step1TxHash: burnTxHash }, opts);
+  let record: TransferRecord;
+  try {
+    record = await sdk.registerTransfer({ quote, step1TxHash: burnTxHash }, opts);
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `The burn went through on Rome (tx ${burnHashes.join(", ")}) but the bridge-api would not register the transfer: ${why}. ` +
+        `Your funds are not lost and the burn is final. Do not run the bridge again for this amount. ` +
+        `Keep the burn tx hash and claim on ${p.dest.name} by hand (see docs/GUIDES.md "Bridge out").`,
+    );
+  }
 
   // 3. poll until the destination claim is ready (Circle attestation) or terminal
   const final = await pollOutbound(sdk, record.id, record, opts, p.deps.sleep, p.pollMax ?? 40, p.pollIntervalMs ?? 3000);
