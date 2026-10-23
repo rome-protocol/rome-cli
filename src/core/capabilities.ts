@@ -233,11 +233,11 @@ export const CAPABILITIES: Capability[] = [
     (a) => newHandler(a),
   ),
 
-  // ── activate: one-time PDA funding, required before the first bridge OUT ──
+  // ── activate: one-time PDA funding; bridge OUT no longer needs it (RomeBridgeWithdraw v12+) ──
   verbAction(
     "activate",
     "activate",
-    "One-time account activation for bridging OUT: funds your external-auth PDA so CCTP can create its per-burn event account. Needs ROME_EVM_KEY (~2 USDC; idempotent — skips if already active). Inbound needs no activation. e.g. rome activate hadrian",
+    "One-time funding of your external-auth PDA (~2 USDC; idempotent — skips if already funded). RomeBridgeWithdraw v12 and newer do not need it to bridge out; inbound never did. Needs ROME_EVM_KEY. e.g. rome activate hadrian",
     [chainArg],
     (a) => activateHandler(a),
   ),

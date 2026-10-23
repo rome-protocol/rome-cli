@@ -5,7 +5,6 @@ import * as bridgeSdk from "@rome-protocol/sdk/bridge";
 import type { SettleTypedData, TransferRecord, UnsignedTx, FlowStatus } from "@rome-protocol/sdk/bridge";
 import { resolveChainId, getChainFacts } from "./facts.js";
 import { requireEvmKey } from "./keys.js";
-import { readActivation, notActivatedError } from "./activate.js";
 
 // ── Fund / bridge: the "from home" on-ramp ──────────────────────────────────
 // One rail-agnostic INBOUND flow engine that ORCHESTRATES @rome-protocol/sdk/bridge
@@ -44,10 +43,45 @@ export interface BridgeDeps {
   sleep: (ms: number) => Promise<void>;
 }
 
+/**
+ * Register a transfer the way the live bridge-api expects. Its /v1/quote answer carries a
+ * `quoteId`, and POST /v1/transfers takes `{quoteId, step1TxHash}`: it refuses a client-sent
+ * quote unless the deployment sets ALLOW_CLIENT_QUOTE (off by default). SDK v0.3.0 only sends
+ * the full quote, so this posts the quoteId itself. A quote with no quoteId goes through the SDK.
+ */
+export async function registerTransferByQuoteId(
+  p: Parameters<typeof bridgeSdk.registerTransfer>[0],
+  opts: Parameters<typeof bridgeSdk.registerTransfer>[1],
+): Promise<TransferRecord> {
+  const quoteId = (p.quote as { quoteId?: unknown }).quoteId;
+  if (typeof quoteId !== "string" || quoteId === "") return bridgeSdk.registerTransfer(p, opts);
+  const res = await fetch(`${opts.base}/v1/transfers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      quoteId,
+      step1TxHash: p.step1TxHash,
+      ...(p.userSettleSig !== undefined ? { userSettleSig: p.userSettleSig } : {}),
+    }),
+  });
+  if (res.ok) return (await res.json()) as TransferRecord;
+  type Problem = { code?: unknown; title?: unknown; detail?: unknown };
+  const problem: Problem | null = await res.json().then(
+    (j) => j as Problem,
+    () => null, // non-JSON failure body from a gateway or proxy
+  );
+  throw new bridgeSdk.BridgeApiError({
+    code: typeof problem?.code === "string" ? problem.code : "rome.bridge.http-error",
+    status: res.status,
+    ...(typeof problem?.title === "string" ? { title: problem.title } : {}),
+    ...(typeof problem?.detail === "string" ? { detail: problem.detail } : {}),
+  });
+}
+
 /** Real deps: the SDK + a viem signer built from ROME_EVM_KEY. */
 export function defaultBridgeDeps(): BridgeDeps {
   return {
-    sdk: bridgeSdk,
+    sdk: { ...bridgeSdk, registerTransfer: registerTransferByQuoteId },
     makeSigner: realSigner,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   };
@@ -257,7 +291,17 @@ export async function runInboundUsdc(p: InboundUsdcParams): Promise<InboundResul
   const userSettleSig = td ? await signer.signTypedData(td) : undefined;
 
   // 5. register, then poll to a terminal outcome
-  const record = await sdk.registerTransfer({ quote, step1TxHash, userSettleSig }, opts);
+  let record: TransferRecord;
+  try {
+    record = await sdk.registerTransfer({ quote, step1TxHash, userSettleSig }, opts);
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `The deposit went through on ${p.source.name} (burn tx ${step1TxHash}) but the bridge-api would not register the transfer: ${why}. ` +
+        `Your funds are not lost and the burn is final. Do not run the bridge again for this amount. ` +
+        `Keep the burn tx hash. The quote is only valid for 15 minutes, so ask the bridge-api operator to register this burn instead of running the bridge again.`,
+    );
+  }
   const final = await pollTransfer(sdk, record.id, record, opts, p.deps.sleep, p.pollMax ?? 40, p.pollIntervalMs ?? 3000);
 
   return {
@@ -396,7 +440,17 @@ export async function runOutboundUsdc(p: OutboundUsdcParams): Promise<OutboundRe
   const burnTxHash = burnHashes[sdk.step1BindingTxIndex(signed)];
 
   // 2. register (no settle authorization on outbound)
-  const record = await sdk.registerTransfer({ quote, step1TxHash: burnTxHash }, opts);
+  let record: TransferRecord;
+  try {
+    record = await sdk.registerTransfer({ quote, step1TxHash: burnTxHash }, opts);
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `The burn went through on Rome (burn tx ${burnTxHash}) but the bridge-api would not register the transfer: ${why}. ` +
+        `Your funds are not lost and the burn is final. Do not run the bridge again for this amount. ` +
+        `Keep the burn tx hash and claim on ${p.dest.name} by hand (see docs/GUIDES.md "Claim a burn the bridge-api never registered").`,
+    );
+  }
 
   // 3. poll until the destination claim is ready (Circle attestation) or terminal
   const final = await pollOutbound(sdk, record.id, record, opts, p.deps.sleep, p.pollMax ?? 40, p.pollIntervalMs ?? 3000);
@@ -496,18 +550,8 @@ async function outboundHandler(args: Record<string, string>, asset: BridgeAsset)
   const romeRpcUrl = facts.rpcUrl;
   const recipient = (args.recipient as `0x${string}` | undefined) ?? account.address;
 
-  // Outbound needs an activated account (a lamport-funded PDA) for the CCTP burn.
-  // Check first with a pure EVM read and point at `rome activate` — otherwise the burn
-  // reverts deep in CCTP (Custom(1)). Skip on dry-run (no burn). Inbound needs none.
-  if (!dryRun) {
-    const pub = createPublicClient({ transport: http(romeRpcUrl) });
-    const ethCall = async (to: string, data: `0x${string}`) => {
-      const { data: ret } = await pub.call({ to: to as `0x${string}`, data });
-      return (ret ?? "0x") as `0x${string}`;
-    };
-    const status = await readActivation(account.address, facts.romeEvmProgramId, ethCall);
-    if (!status.activated) throw notActivatedError(status, args.chain);
-  }
+  // No activation pre-check: RomeBridgeWithdraw (v12+) funds the CCTP message-account
+  // rent itself and the user pays in gas. Older bridge contracts are not supported here.
 
   return runOutboundUsdc({ romeChainId, base, romeRpcUrl, dest, amountBaseUnits, address: account.address, recipient, asset, dryRun, deps: defaultBridgeDeps() });
 }

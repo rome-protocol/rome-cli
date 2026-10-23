@@ -8,7 +8,6 @@ import { requireEvmKey, requireSolanaKey } from "./keys.js";
 import { eip1193FromAccount } from "./eip1193.js";
 import { STORE_PROBE, CPI_MEMO_PROBE } from "./probe.js";
 import { runInboundUsdc, runOutboundUsdc, resolveSourceChain, resolveBridgeBase, usdcBaseUnits, defaultBridgeDeps } from "./bridge.js";
-import { readActivation, notActivatedError } from "./activate.js";
 
 // `rome verify --path solidity` — the both-lane works-gate. Deploy a probe, then prove
 // the SAME contract answers when set from the EVM lane (submitRomeTx) AND the Solana lane
@@ -218,8 +217,8 @@ export function defaultVerifySolanaProgramDeps(chain: string | number, opts?: { 
 // submitRomeTx) → bridge it back OUT to attestation-ready + a claim handle. Legs run
 // in order and fail fast. The gate asserts to attestation-ready — the destination
 // claim is the user's own step (Rome sponsors inbound settle, never the outbound
-// claim). Prereqs checked up front: activation (the out-leg burns), source USDC +
-// gas, Rome gas. EVM key only. The in-leg waits on Circle attestation (~15–20 min).
+// claim). Prereqs: source USDC + gas, Rome gas (no activation: the bridge contract funds the
+// burn's rent). EVM key only. The in-leg waits on Circle attestation (~15–20 min).
 
 export interface VerifyFromHomeResult {
   path: "from-home";
@@ -343,16 +342,6 @@ export async function verifyHandler(
   if (path === "from-home") {
     if (!args.from) throw new Error("from-home needs --from <source chain> (where your USDC starts).");
     if (!args.amount) throw new Error("from-home needs --amount <usdc> (small, e.g. 0.2).");
-    const c = getChainFacts(args.chain);
-    const account = privateKeyToAccount(requireEvmKey());
-    // The out-leg burns — check activation FIRST so we never bridge in and then strand.
-    const pub = createPublicClient({ transport: http(c.rpcUrl) });
-    const ethCall = async (to: string, data: `0x${string}`) => {
-      const { data: ret } = await pub.call({ to: to as `0x${string}`, data });
-      return (ret ?? "0x") as `0x${string}`;
-    };
-    const status = await readActivation(account.address, c.romeEvmProgramId, ethCall);
-    if (!status.activated) throw notActivatedError(status, args.chain);
     return runVerifyFromHome(defaultVerifyFromHomeDeps(args.chain, { from: args.from, amount: args.amount, bridgeApi: args["bridge-api"] }));
   }
   throw new Error(`--path ${path} is not supported (available: solidity, solana-program, from-home).`);
